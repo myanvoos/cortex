@@ -1,9 +1,9 @@
 // Define the token enum
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     BeginSetup, 
-    // EndSetup, 
+    EndSetup, 
     DocumentClass(String),
     Matrix,
     Sum,
@@ -74,11 +74,29 @@ pub fn tokenise(input: &str) -> Vec<Token> {
                             "setup" => tokens.push(Token::BeginSetup),
                             _ => println!("Unknown block: {}", block_name),
                         }
+                    },
+                    "end" => {
+                        // Block beginning keywords
+                        let mut block_name = String::new();
+                        chars.next(); // Skip '('
+                        while let Some(&block_char) = chars.peek() {
+                            if block_char == ')' {
+                                chars.next();
+                                break;
+                            } else {
+                                block_name.push(block_char);
+                                chars.next();
+                            }
+                        }
+                        match block_name.as_str() {
+                            "setup" => tokens.push(Token::EndSetup),
+                            _ => println!("Unknown block: {}", block_name),
+                        }
                     }
                     "documentclass" => tokens.push(Token::DocumentClass("article".to_string())), // hard=coded for now
                     "matrix" => tokens.push(Token::Matrix),
                     "sum" => tokens.push(Token::Sum),
-                    _ => tokens.push(Token::Identifier(identifier)),
+                    _ => tokens.push(Token::Identifier(identifier))
                 }
             }
             _ => {

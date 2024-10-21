@@ -1,4 +1,5 @@
 mod tokeniser;
+mod parser;
 
 fn main() {
     let input = "
@@ -13,9 +14,13 @@ fn main() {
     ";
 
     let tokens = tokeniser::tokenise(input);
-    for token in tokens {
+    let tokens_clone = tokens.clone();
+    for token in tokens_clone {
         print!("{:?}\n", token);
     }
+
+    println!("\n\n\n\n");
+    // parser::parse(tokens);
 
 }
 
