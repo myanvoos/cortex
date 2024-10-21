@@ -1,0 +1,34 @@
+// How the scripting language would look like at the end:
+// Now I need to write the translator/compiler to compile it into LaTeX
+
+begin(setup)
+
+documentclass("article")
+title("One of the first men on earth")
+author("Emrys")
+
+A = [
+    [a, b, c]
+    [d, e, f]
+    [g, h, i]
+]
+fx = \sin(\sqrt(\x^2y\a\b)) # treat everything after ^ as a power without the need for bracketing. Similarly for _
+gx = \a^2\omega\sqrt(x^2)
+
+end(setup)
+
+begin(document)
+
+One of the most important equations on earth: 
+
+$(integral (a -> b) \fx dx)
+$(matrix A) # renders matrix A using standard amsmath pmatrix
+$(matrix A "[]") # renders matrix A using amsmath bmatrix 
+$(matrix transpose A) # automatically transposes the matrix when outputting
+$(matrix inverse A) # automatically inverts the matrix when outputting
+$(sum (n -> n-1) \gx)
+$(fraction dy/dx = (integral (0 -> 1) \x^2\Theta dx)))
+$(fraction del dy/dx = \gx) # renders using the partial operator
+$(limit (h -> 0) \fx  = oo) # oo is infinity
+
+end(document)
