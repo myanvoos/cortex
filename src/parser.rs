@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, error::Error, hash::Hash};
 
 use pest::Parser;
 use pest_derive::Parser;
@@ -104,7 +104,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
                         Rule::setup_block => {
-                            parse_setup_block(&inner_pair, &mut state);
+                            parse_setup_block(inner_pair, &mut state);
                         },
                         Rule::document_block => {
                             let mut latex = String::new();
@@ -133,8 +133,34 @@ fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, state: &LatexS
 
 }
 
-fn parse_setup_block(inner_pair: &pest::iterators::Pair<Rule>, state: &LatexState) {
+fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> Result<(), Box<dyn Error>>{
+    for setup_pair in inner_pair.into_inner() {
+        match setup_pair.as_rule() {
+            Rule::document_class => {
+                if let Some(content) = extracted_string_content(setup_pair.as_str()) {
+                    print!("Extracted document class: {}", content);
+                    state.set_document_class(content);
+                }
+            },
+            
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
+// Helper function to extract string from pair
+pub fn extracted_string_content(input: &str) -> Option<String> {
+    let first_quote = input.find(|c| c == '"' || c == '\'');
+
+    if let Some(start_index) = first_quote {
+        let quote_char = input.chars().nth(start_index).unwrap();
+        if let Some(end_index) = input[start_index + 1..].find(|c| c == quote_char) {
+            let content = &input[start_index + 1..start_index + 1 + end_index];
+            return Some(content.to_string());
+        }
+    }
+    None
 }
 
 // DEBUG: Helper function to get the next inner pairs

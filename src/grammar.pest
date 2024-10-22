@@ -14,14 +14,6 @@ document_block = {
     "begin" ~ "(" ~ "document" ~ ")" ~ document_content* ~ "end" ~ "(" ~ "document" ~ ")"
 }
 
-setup_content = _{
-    document_class |
-    title |
-    author |
-    matrix |
-    function | 
-    fraction
-}
 
 document_class = { "documentclass" ~ "(" ~ string ~ ")" }
 title = { "title" ~ "(" ~ string ~ ")" }
@@ -38,6 +30,15 @@ function = {
 
 param_list = { identifier ~ ("," ~ identifier)* }
 function_body = { (!"}" ~ ANY)* }
+
+setup_content = _{
+    document_class |
+    title |
+    author |
+    matrix |
+    function | 
+    fraction
+}
 
 document_content = _{
     inline_math_expr |

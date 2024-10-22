@@ -3,6 +3,7 @@
 mod demoparser;
 mod parser;
 mod plugin;
+mod tests;
 
 use crate::parser::parse_to_latex;
 
