@@ -1,11 +1,93 @@
+use std::{collections::HashMap, hash::Hash};
+
 use pest::Parser;
 use pest_derive::Parser;
 
 use crate::plugin::build_preamble;
 
+////////////////////////////////
+/// STRUCTURE
+///  
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
 pub struct LatexParser;
+
+// SETUP: Defining a struct to hold all the state variables. These will be defined in setup block.
+#[derive(Default)]
+pub struct LatexState {
+    pub setup: SetupBlock,
+    pub document: DocumentBlock,
+    pub matrices: HashMap<String, Matrix>,
+    pub functions: HashMap<String, Function>,
+    pub variables: HashMap<String, Value>
+}
+
+// SETUP: This defines the values that can be used in the setup block. Integers, string, lists, etc.
+#[derive(Clone, Debug)]
+pub enum Value {
+    Number(f64),
+    String(String),
+    List(Vec<Value>),
+    Boolean(bool),
+    FunctionCall(String, Vec<Value>),
+    // Might add more
+}
+
+pub struct Function {
+    pub params: Vec<String>,
+    pub body: String
+}
+
+pub struct Matrix {
+    pub rows: Vec<Vec<Value>>
+}
+
+#[derive(Default)]
+pub struct SetupBlock {
+    pub document_class: String,
+    pub document_options: Vec<String>
+}
+
+#[derive(Default)]
+pub struct DocumentBlock {
+    pub title: String,
+    pub author: Vec<String>,
+    pub body: String
+}
+
+// SETUP: Implementing LatexState
+impl LatexState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    // Helper methods to modify state of the latex
+    pub fn set_title(&mut self, title: String) {
+        self.document.title = title;
+    }
+    pub fn add_author(&mut self, author: String) {
+        self.document.author.push(author);
+    }
+    pub fn set_document_class(&mut self, document_class: String) {
+        self.setup.document_class = document_class;
+    }
+    pub fn set_document_options(&mut self, document_options: Vec<String>) {
+        self.setup.document_options = document_options;
+    }
+    pub fn append_to_body(&mut self, body: String) {
+        self.document.body.push_str(&body);
+    }
+    pub fn add_matrix_to_map(&mut self, name: String, matrix: Matrix) {
+        self.matrices.insert(name, matrix);
+    }
+    pub fn add_function_to_map(&mut self, name: String, function: Function) {
+        self.functions.insert(name, function);
+    }
+    pub fn add_variable_to_map(&mut self, name: String, value: Value) {
+        self.variables.insert(name, value);
+    }
+}
+
+////////////////////////////////
 
 pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
     let placeholder = "".to_string();
@@ -13,7 +95,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
     // file = { SOI ~ setup_block ~ document_block ~ EOI }
     let pairs = LatexParser::parse(Rule::file, input)?;
 
-    // print_all_pairs(pairs, 0);
+    let mut state = LatexState::new();
 
     for pair in pairs {
         match pair.as_rule() {
@@ -22,12 +104,12 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
                         Rule::setup_block => {
-                            parse_setup_block(&inner_pair);
+                            parse_setup_block(&inner_pair, &mut state);
                         },
                         Rule::document_block => {
                             let mut latex = String::new();
-                            let _ = build_preamble(&mut latex);
-                            parse_document_block(&inner_pair, &mut latex);
+                            let _ = build_preamble(&mut state);
+                            parse_document_block(&inner_pair, &mut state);
                             return Ok(latex);
                         },
                         _ => {
@@ -47,11 +129,11 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
 }
 
 
-fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, latex: &mut String) {
+fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, state: &LatexState) {
 
 }
 
-fn parse_setup_block(inner_pair: &pest::iterators::Pair<Rule>) {
+fn parse_setup_block(inner_pair: &pest::iterators::Pair<Rule>, state: &LatexState) {
 
 }
 
