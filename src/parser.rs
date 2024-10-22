@@ -1,5 +1,5 @@
 use std::{collections::HashMap, error::Error, hash::Hash};
-
+use regex::Regex;
 use pest::Parser;
 use pest_derive::Parser;
 
@@ -112,14 +112,13 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             parse_setup_block(inner_pair, &mut state);
                         },
                         Rule::document_block => {
-                            let mut latex = String::new();
                             let _ = build_preamble(&mut state);
 
                             // Print what we have so far for debugging
                             println!("\n{}", state.document.body);
                             
                             parse_document_block(inner_pair, &mut state);
-                            return Ok(latex);
+                            return Ok(state.document.body);
                         },
                         _ => {
                             println!("Unknown rule: {:?}", inner_pair.as_rule());
@@ -132,13 +131,32 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
             }
         }
     }
-
-
     Ok(placeholder)
 }
 
 
 fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+    for document_pair in inner_pair.into_inner() {
+        match document_pair.as_rule() {
+            Rule::inline_math_expr | Rule::newline_math_expr=> {
+                println!("Extracted math: {:?}", document_pair.as_rule()); 
+                let delimiter = if document_pair.as_rule() == Rule::inline_math_expr {
+                    "$"
+                } else {
+                    "$$"
+                };
+                state.append_to_body(format!("{}", delimiter.to_string()));
+                
+                process_maths(document_pair, state);
+                
+                state.append_to_body(format!("{}", delimiter.to_string()));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> Result<(), Box<dyn Error>>{
     for setup_pair in inner_pair.into_inner() {
         match setup_pair.as_rule() {
             Rule::document_class => {
@@ -160,18 +178,6 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                     state.set_title(title);
                 }
             },
-            Rule::inline_math_expr | Rule::newline_math_expr=> {
-                println!("Extracted math: {}", setup_pair.as_str()); 
-                
-            }
-            _ => {}
-        }
-    }
-}
-
-fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> Result<(), Box<dyn Error>>{
-    for setup_pair in inner_pair.into_inner() {
-        match setup_pair.as_rule() {
             Rule::matrix => {
                 // state.append_to_body("\\begin{equation}\n".to_string());
                 
@@ -192,16 +198,40 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
 
 pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
     for process_pair in inner_pair.into_inner() {
+        println!("Extracted math: {:?}", process_pair.as_rule());
         match process_pair.as_rule() {
-            Rule::matrix => {
+
+            // NOTE: matrix_usage is NOT matrix!!
+            // matrix is the code definition of a matrix in setup
+            // matrix_usage is the usage of a matrix in the document, in the form $(matrix A) or similar
+            Rule::matrix_usage => {
                 state.append_to_body("\\begin{equation}\n".to_string());
                 
                 // TODO: Add support for other matrix types
                 // Pmatrix for now
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
         
-                
-        
+                println!("Extracting matrix: {:?}", process_pair.as_str());  
+                if let Some(var_name) = extract_variable_name(process_pair.as_str()) {
+                    println!("Extracted variable: {}", var_name);
+                    let matrix = state.matrices.get(&var_name).unwrap();
+                    println!("Fetched matrix: {:?}", matrix);
+                    
+                    let mut formattedRows = Vec::new();
+                    for row in &matrix.rows {
+                        for (i, element) in row.iter().enumerate() {
+                            if i == row.len() - 1 {
+                                formattedRows.push(format!("{} \\\\\n", element));
+                            } else {
+                                formattedRows.push(format!("{} & ", element));
+                            }
+                        }
+                    }
+                    state.append_to_body(formattedRows.join(""));
+                } else {
+                    println!("Failed to extract variable");
+                }
+            
                 state.append_to_body("\\end{pmatrix}\n".to_string());
                 state.append_to_body("\\end{equation}\n".to_string())
             },
@@ -262,6 +292,19 @@ pub fn remove_quotes(s: &str) -> String {
     s.trim_matches(|c| c == '\"' || c == '\'').to_string()
 }
 
+pub fn extract_variable_name(input: &str) -> Option<String> {
+    // Match any word characters at the start, followed by whitespace,
+    // then capture the final word/variable name which can include:
+    // - Regular word chars (a-z, A-Z, 0-9, _)
+    // - Common math variable patterns like dx, dy, etc.
+    // - Special math symbols commonly used in variables
+    let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*\s+(?:del\s+)?([a-zA-Z][a-zA-Z0-9_]*(?:d[xyz])?)")
+        .unwrap();
+
+    re.captures(input)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
 
 // Helper function to extract string from pair
 pub fn extracted_string_content(input: &str) -> Option<String> {
