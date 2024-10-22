@@ -1,7 +1,7 @@
-
-
 use pest::Parser;
 use pest_derive::Parser;
+
+use crate::plugin::build_preamble;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -26,7 +26,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                         },
                         Rule::document_block => {
                             let mut latex = String::new();
-                            build_preamble(&mut latex);
+                            let _ = build_preamble(&mut latex);
                             parse_document_block(&inner_pair, &mut latex);
                             return Ok(latex);
                         },
@@ -46,9 +46,6 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
     Ok(placeholder)
 }
 
-fn build_preamble(latex: &mut String) {
-    
-}
 
 fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, latex: &mut String) {
 

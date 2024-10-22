@@ -2,6 +2,7 @@
 
 mod demoparser;
 mod parser;
+mod plugin;
 
 use crate::parser::parse_to_latex;
 
