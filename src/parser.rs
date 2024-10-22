@@ -13,42 +13,41 @@ use crate::plugin::build_preamble;
 pub struct LatexParser;
 
 // SETUP: Defining a struct to hold all the state variables. These will be defined in setup block.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LatexState {
     pub setup: SetupBlock,
     pub document: DocumentBlock,
     pub matrices: HashMap<String, Matrix>,
     pub functions: HashMap<String, Function>,
-    pub variables: HashMap<String, Value>
+    pub variables: HashMap<String, String>
 }
 
-// SETUP: This defines the values that can be used in the setup block. Integers, string, lists, etc.
-#[derive(Clone, Debug)]
-pub enum Value {
-    Number(f64),
-    String(String),
-    List(Vec<Value>),
-    Boolean(bool),
-    FunctionCall(String, Vec<Value>),
-    // Might add more
-}
-
+#[derive(Debug)]
 pub struct Function {
     pub params: Vec<String>,
     pub body: String
 }
 
+#[derive(Debug)]
 pub struct Matrix {
-    pub rows: Vec<Vec<Value>>
+    pub rows: Vec<Vec<String>>
 }
 
-#[derive(Default)]
+impl FromIterator<Vec<String>> for Matrix {
+    fn from_iter<I: IntoIterator<Item = Vec<String>>>(iter: I) -> Self {
+        Self {
+            rows: iter.into_iter().collect()
+        }
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct SetupBlock {
     pub document_class: String,
     pub document_options: Vec<String>
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DocumentBlock {
     // Might move this to setup to fit grammar
     // and make vectors with inline-math, newline-math, paragraphs etc
@@ -85,7 +84,7 @@ impl LatexState {
     pub fn add_function_to_map(&mut self, name: String, function: Function) {
         self.functions.insert(name, function);
     }
-    pub fn add_variable_to_map(&mut self, name: String, value: Value) {
+    pub fn add_variable_to_map(&mut self, name: String, value: String) {
         self.variables.insert(name, value);
     }
 }
@@ -162,12 +161,62 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                     state.set_title(title);
                 }
             },
-            
+            Rule::matrix => {
+                state.append_to_body("\\begin{equation}\n".to_string());
+                
+                // TODO: Add support for other matrix types
+                // Pmatrix for now
+                state.append_to_body("\\begin{pmatrix}\n".to_string());
+                
+                if let Some((name, matrix)) = extracted_matrix_content(setup_pair.as_str()) {
+                    println!("Extracted matrix: {}: {:?}", name, matrix.rows);
+                }
+
+                state.append_to_body("\\end{pmatrix}\n".to_string());
+                state.append_to_body("\\end{equation}\n".to_string());
+                
+                
+            }
             
             _ => {}
         }
     }
     Ok(())
+}
+
+// Helper function to parse matrices. We want a key-value pair
+pub fn extracted_matrix_content(input: &str) -> Option<(String, Matrix)> {
+    // Separate name and matrix content
+    let parts: Vec<&str> = input.split("=").collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let name = parts[0].trim();
+
+    let matrix_str = parts[1].trim();
+    if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
+        return None;
+    }
+
+    // Remove outer brackets, split into rows
+    let inner_content = &matrix_str[1..matrix_str.len() - 1].trim();
+    if !inner_content.starts_with('[') || !inner_content.ends_with(']') {
+        return None;
+    }
+
+    let matrix: Matrix = inner_content
+        .trim_matches(|c| c == '[' || c == ']')
+        .split("],[")
+        .map(|row| {
+            row.trim_matches(|c| c == '[' || c == ']')
+                .split(',')
+                .map(|element| element.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+       .collect();
+
+    Some((name.to_string(), matrix)) 
 }
 
 // Helper function to extract string from pair
