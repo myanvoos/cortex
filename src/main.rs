@@ -1,6 +1,9 @@
 // src/main.rs
 
+mod demoparser;
 mod parser;
+
+use crate::parser::parse_to_latex;
 
 // use demoparser::parse_to_latex;
 
@@ -23,6 +26,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         This is some text with math: $(matrix A)
         end(document)
     "#;
+
+    match parse_to_latex(input) {
+        Ok(latex) => {
+            println!("{}", latex);
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+        }
+    }
 
     Ok(())
 }
