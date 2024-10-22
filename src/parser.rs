@@ -13,20 +13,49 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
     // file = { SOI ~ setup_block ~ document_block ~ EOI }
     let pairs = LatexParser::parse(Rule::file, input)?;
 
+    // print_all_pairs(pairs, 0);
+
     for pair in pairs {
-        // println!("Rule: {:?}, Span: {:?}\n", pair.as_rule(), pair.as_span());
         match pair.as_rule() {
             Rule::file => {
-                print_inner_pairs(pair);
+                // print_inner_pairs(pair);
+                for inner_pair in pair.into_inner() {
+                    match inner_pair.as_rule() {
+                        Rule::setup_block => {
+                            parse_setup_block(&inner_pair);
+                        },
+                        Rule::document_block => {
+                            let mut latex = String::new();
+                            build_preamble(&mut latex);
+                            parse_document_block(&inner_pair, &mut latex);
+                            return Ok(latex);
+                        },
+                        _ => {
+                            println!("Unknown rule: {:?}", inner_pair.as_rule());
+                        }
+                    }
+                }
             }
             _ => {
-                
+                println!("Unknown rule: {:?}", pair.as_rule());
             }
         }
     }
 
 
     Ok(placeholder)
+}
+
+fn build_preamble(latex: &mut String) {
+    
+}
+
+fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, latex: &mut String) {
+
+}
+
+fn parse_setup_block(inner_pair: &pest::iterators::Pair<Rule>) {
+
 }
 
 // DEBUG: Helper function to get the next inner pairs
