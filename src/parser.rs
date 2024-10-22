@@ -28,6 +28,9 @@ pub struct Function {
     pub body: String
 }
 
+
+// TODO: Separate matrices for display and for doing maths with
+// same for functions
 #[derive(Debug)]
 pub struct Matrix {
     pub rows: Vec<Vec<String>>
@@ -162,21 +165,19 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 }
             },
             Rule::matrix => {
-                state.append_to_body("\\begin{equation}\n".to_string());
+                // state.append_to_body("\\begin{equation}\n".to_string());
                 
                 // TODO: Add support for other matrix types
                 // Pmatrix for now
-                state.append_to_body("\\begin{pmatrix}\n".to_string());
+                // state.append_to_body("\\begin{pmatrix}\n".to_string());
                 
                 if let Some((name, matrix)) = extracted_matrix_content(setup_pair.as_str()) {
-                    println!("Extracted matrix: {}: {:?}", name, matrix.rows);
+                    state.add_matrix_to_map(name, matrix);
                 }
 
-                state.append_to_body("\\end{pmatrix}\n".to_string());
-                state.append_to_body("\\end{equation}\n".to_string());
-                
-                
-            }
+                // state.append_to_body("\\end{pmatrix}\n".to_string());
+                // state.append_to_body("\\end{equation}\n".to_string());
+            },
             
             _ => {}
         }
@@ -206,18 +207,36 @@ pub fn extracted_matrix_content(input: &str) -> Option<(String, Matrix)> {
     }
 
     let matrix: Matrix = inner_content
-        .trim_matches(|c| c == '[' || c == ']')
-        .split("],[")
+        .split("]\n")
         .map(|row| {
-            row.trim_matches(|c| c == '[' || c == ']')
+            row.trim()
+                .trim_matches(|c| c == '[' || c == ']')
                 .split(',')
-                .map(|element| element.trim().to_string())
+                .map(|element| {
+                    element
+                        .trim()
+                        .trim_matches(|c| c == '[' || c == ']')
+                        .to_string()
+                })  
+                .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
         })
-       .collect();
+        .filter(|row: &Vec<String>| !row.is_empty())
+        .collect();
 
-    Some((name.to_string(), matrix)) 
+    if matrix.rows.is_empty() {
+        return None;
+    } else {
+        Some((name.to_string(), matrix))
+    }
+
 }
+
+// Helper function to remove quotes from a string
+pub fn remove_quotes(s: &str) -> String {
+    s.trim_matches(|c| c == '\"' || c == '\'').to_string()
+}
+
 
 // Helper function to extract string from pair
 pub fn extracted_string_content(input: &str) -> Option<String> {
