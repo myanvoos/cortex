@@ -1,44 +1,49 @@
+//=================================
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
 
+//=================================
+// CORE TYPES
+//=================================
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 number = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-string = { "\"" ~ value ~ "\"" }
-value = @{ (!"\"" ~ ANY)* }
+string = { "\"" ~ string_value ~ "\"" }
+string_value = @{ (!("\"" | "@" | "/" ) ~ ANY)* }
 
-
+//=================================
+// DOCUMENT STRUCTURE
+//=================================
+file = { SOI ~ setup_block ~ document_block ~ EOI }
 
 setup_block = {
-    "begin" ~ "(" ~ "setup" ~ ")" ~ setup_content* ~ "end" ~ "(" ~ "setup" ~ ")"
+    "begin" ~ "(" ~ "setup" ~ ")" ~ 
+    setup_content* 
+    ~ "end" ~ "(" ~ "setup" ~ ")"
 }
 document_block = {
-    "begin" ~ "(" ~ "document" ~ ")" ~ document_content* ~ "end" ~ "(" ~ "document" ~ ")"
+    "begin" ~ "(" ~ "document" ~ ")" ~ 
+    document_content* 
+    ~ "end" ~ "(" ~ "document" ~ ")"
 }
 
-
+//==================================
+// DOCUMENT METADATA
+//==================================
 document_class = { "documentclass" ~ "(" ~ string ~ ")" }
 title = { "title" ~ "(" ~ string ~ ")" }
-author = { "author" ~ "(" ~ (string ~ ("," ~ string)*) ~ ")" }
+author = { "author" ~ "(" ~ author_list ~ ")" }
+author_list = { string ~ ("," ~ string)* }
 
-matrix = { identifier ~ "=" ~ "[" ~ matrix_row+ ~ ("," ~ matrix_row)* ~ "]" }
-matrix_row = { "[" ~ matrix_elements ~ "]" }
-matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
-matrix_element = { number | identifier}
-
-function = { 
-    "function" ~ identifier ~ "(" ~ param_list? ~ ")" ~
-    "{" ~ function_body ~ "}"
-}
-
-param_list = { identifier ~ ("," ~ identifier)* }
-function_body = { (!"}" ~ ANY)* }
-
+//=================================
+// CONTENT TYPES
+//=================================
 setup_content = _{
     document_class |
     title |
     author |
     matrix |
     function | 
-    fraction
+    variable
 }
 
 document_content = _{
@@ -47,27 +52,72 @@ document_content = _{
     text
 }
 
-text = { (!("$(" | "$$(" | "begin(" | "end(") ~ ANY)+ }
-inline_math_expr = { "$" ~ "(" ~ math_content ~ ")" }
-newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
-
+//=============================
+// MATH EXPRESSIONS
+//=============================
 math_content = _{
     integral |
     matrix_usage |
     sum |
     fraction |
-    limit
+    limit |
+    variable_usage
 }
 
-integral = { "integral" ~ "(" ~ range ~ ")" ~ expr }
-range = { identifier ~ "->" ~ identifier }
+text = { (!("$(" | "$$(" | "begin(" | "end(") ~ ANY)+ }
+inline_math_expr = { "$" ~ "(" ~ math_content ~ ")" }
+newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
+
+//==================================
+// MATRIX DEFINITIONS
+//
+// - matrix: defines the matrix in setup block i.e. a = [...]
+// - matrix usage: the use of matrix in document block i.e. $(matrix A)
+//==================================
+matrix = { identifier ~ "=" ~ "[" ~ matrix_rows ~ "]" }
+matrix_rows = { matrix_row+ ~ ("," ~ matrix_row)* }
+matrix_row = { "[" ~ matrix_elements ~ "]" }
+matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
+matrix_element = { number | identifier}
+
 matrix_usage = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
 matrix_modifier = { "transpose" | "inverse" }
 matrix_style = { string }
-sum = { "sum" ~ "(" ~ range ~ ")" ~ expr }
-fraction = { "fraction" ~ fraction_modifier? ~ expr ~ expr }
-fraction_modifier = { "del" }
-limit = { "limit" ~ "(" ~ range ~ ")" ~ expr }
-expr = { (!("$") ~ "\\" ~ ANY)+ }
 
-file = { SOI ~ setup_block ~ document_block ~ EOI }
+//===================================
+// FUNCTION DEFINITIONS
+//===================================
+function = { 
+    "function" ~ identifier ~ "(" ~ param_list? ~ ")" ~
+    "{" ~ function_body ~ "}"
+}
+param_list = { identifier ~ ("," ~ identifier)* }
+function_body = { (!"}" ~ ANY)* }
+
+//===============================
+// VARIABLES AND USAGE
+//
+// - variable: expressions like a = b, defined in setup
+// - variable usage: expressions for calling in document i.e. $(t), $(metadata), $
+// - expr: expressions like $(\dx\dy) to distinguish between multiple variables
+//===============================
+variable = { identifier ~ "=" ~ (number | identifier) }
+variable_usage = { identifier }
+
+expr = { command+ } 
+command = { "\\" ~ variable_usage }
+
+//=================================
+// MATHEMATICAL OPERATIONS
+//
+//=================================
+integral = { "integral" ~ "(" ~ range ~ ")" ~ expr }
+range = { identifier ~ "->" ~ identifier }
+
+sum = { "sum" ~ "(" ~ range ~ ")" ~ expr }
+
+fraction = { "fraction" ~ fraction_modifier? ~ expr }
+fraction_modifier = { "del" }
+
+limit = { "limit" ~ "(" ~ range ~ ")" ~ expr }
+

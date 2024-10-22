@@ -1,6 +1,5 @@
 // src/main.rs
 
-mod demoparser;
 mod parser;
 mod plugin;
 mod tests;
@@ -16,6 +15,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title("One of the first men on earth")
         author("Emrys")
         
+        t = 1509
+
+        asper = t
+
         A = [
             [a, b, c]
             [d, e, f]
@@ -23,12 +26,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ]
 
         B = [[1, 2, 3] [4, 5, 6]]
-
-        C= [
-            [a, 2, b] [4, c, 6]]
-
-        D = [ [10, 100, 1000]
-        [7,8,2]]
         
         end(setup)
         
@@ -37,8 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         $$(matrix A)
         $$(matrix B)
-        $$(matrix C)
-        $$(matrix D)
+        # hi
+        A variable is $(t). Text afterwards.
+        
+New line now: $$(asper)
+
+$(fraction \dy\dx)
 
         end(document)
     "#;

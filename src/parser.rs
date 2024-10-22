@@ -112,9 +112,13 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             parse_setup_block(inner_pair, &mut state);
                         },
                         Rule::document_block => {
+
+                            // DEBUG: newline at the start
+                            state.append_to_body("\n".to_string());
+
                             let _ = build_preamble(&mut state);
 
-                            // Print what we have so far for debugging
+                            // DEBUG: Print what we have so far for debugging
                             println!("\n{}", state.document.body);
                             
                             parse_document_block(inner_pair, &mut state);
@@ -142,7 +146,7 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
         match document_pair.as_rule() {
             Rule::text => {
                 println!("Extracted text: {:?}", document_pair.as_str());
-                state.append_to_body(document_pair.as_str().to_string());
+                state.append_to_body(document_pair.as_str().trim().to_string());
             }
             Rule::inline_math_expr | Rule::newline_math_expr=> {
                 println!("Extracted math: {:?}", document_pair.as_rule()); 
@@ -151,11 +155,20 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                 } else {
                     "$$"
                 };
-                state.append_to_body(format!("{}", delimiter.to_string()));
+
+                if delimiter == "$$" {
+                    state.append_to_body(format!("\n{}", delimiter.to_string()));
+                } else {
+                    state.append_to_body(format!(" {}", delimiter.to_string()));
+                }
                 
                 process_maths(document_pair, state);
                 
-                state.append_to_body(format!("{}", delimiter.to_string()));
+                if delimiter == "$$" {
+                    state.append_to_body(format!("{}\n", delimiter.to_string()));
+                } else {
+                    state.append_to_body(format!("{}", delimiter.to_string()));
+                }
             }
             _ => {}
         }
@@ -166,20 +179,20 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
     for setup_pair in inner_pair.into_inner() {
         match setup_pair.as_rule() {
             Rule::document_class => {
-                if let Some(content) = extracted_string_content(setup_pair.as_str()) {
+                if let Some(content) = extract_string_content(setup_pair.as_str()) {
                     println!("Extracted document class: {}", content);
                     state.set_document_class(content);
                 }
             },
             Rule::author => {
                 // ONLY WORKS FOR SINGLE AUTHORS FOR NOW
-                if let Some(author) = extracted_string_content(setup_pair.as_str()) {
+                if let Some(author) = extract_string_content(setup_pair.as_str()) {
                     println!("Extracted author: {}", author);
                     state.add_author(author);
                 }
             },
             Rule::title => {
-                if let Some(title) = extracted_string_content(setup_pair.as_str()) {
+                if let Some(title) = extract_string_content(setup_pair.as_str()) {
                     println!("Extracted title: {}", title);
                     state.set_title(title);
                 }
@@ -191,10 +204,21 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 // Pmatrix for now
                 // state.append_to_body("\\begin{pmatrix}\n".to_string());
                 
-                if let Some((name, matrix)) = extracted_matrix_content(setup_pair.as_str()) {
+                if let Some((name, matrix)) = extract_matrix_content(setup_pair.as_str()) {
                     state.add_matrix_to_map(name, matrix);
                 }
             },
+            Rule::variable => {
+                println!("Extracted variable: {:?}", setup_pair.as_str());
+
+                let parts: Vec<&str> = setup_pair.as_str().split("=").collect();
+                if parts.len() != 2 {
+                    return Err("Invalid variable definition".into());
+                }
+                let name = parts[0].trim();
+                let value = parts[1].trim();
+                state.add_variable_to_map(name.to_string(), value.to_string());
+            }
             
             _ => {}
         }
@@ -204,7 +228,6 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
 
 pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
     for process_pair in inner_pair.into_inner() {
-        println!("Extracted math: {:?}", process_pair.as_rule());
         match process_pair.as_rule() {
 
             // NOTE: matrix_usage is NOT matrix!!
@@ -217,23 +240,23 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 // Pmatrix for now
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
         
-                println!("Extracting matrix: {:?}", process_pair.as_str());  
+                // println!("Extracting matrix: {:?}", process_pair.as_str());  
                 if let Some(var_name) = extract_variable_name(process_pair.as_str()) {
-                    println!("Extracted variable: {}", var_name);
+                    // println!("Extracted variable: {}", var_name);
                     let matrix = state.matrices.get(&var_name).unwrap();
-                    println!("Fetched matrix: {:?}\n", matrix);
+                    // println!("Fetched matrix: {:?}\n", matrix);
                     
-                    let mut formattedRows = Vec::new();
+                    let mut formatted_rows = Vec::new();
                     for row in &matrix.rows {
                         for (i, element) in row.iter().enumerate() {
                             if i == row.len() - 1 {
-                                formattedRows.push(format!("{} \\\\\n", element));
+                                formatted_rows.push(format!("{} \\\\\n", element));
                             } else {
-                                formattedRows.push(format!("{} & ", element));
+                                formatted_rows.push(format!("{} & ", element));
                             }
                         }
                     }
-                    state.append_to_body(formattedRows.join(""));
+                    state.append_to_body(formatted_rows.join(""));
                 } else {
                     println!("Failed to extract variable");
                 }
@@ -241,113 +264,139 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 state.append_to_body("\\end{pmatrix}\n".to_string());
                 state.append_to_body("\\end{equation}\n".to_string())
             },
+            Rule::variable_usage => {
+                println!("Extracted variable: {:?}", process_pair.as_str());
+                state.append_to_body(state.variables.get(process_pair.as_str()).unwrap().to_string());
+            }
+            Rule::fraction => {
+                println!("Extracted fraction: {:?}", process_pair.as_str());
+                
+                if let Some(name) = extract_variable_name(process_pair.as_str()) {
+                    println!("Extracted variable: {}", name);
+                }
+
+            }
             _ => {}
         }
     }
 }
 
-// Helper function to parse matrices. We want a key-value pair
-pub fn extracted_matrix_content(input: &str) -> Option<(String, Matrix)> {
-    // Separate name and matrix content
+// Helper function to extract name, value from variable
+pub fn extract_variable_value(input: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = input.split("=").collect();
     if parts.len() != 2 {
         return None;
     }
-    let name = parts[0].trim();
-    let matrix_str = parts[1].trim();
-
-
-    
-    if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
-        return None;
-    }
-    let content = &matrix_str[1..matrix_str.len() - 1].trim();
-
-    let mut rows = Vec::new();
-
-    // Try to extract rows enclosed in inner brackets
-    let mut has_rows = false;
-    let mut chars = content.chars().enumerate().peekable();
-    while let Some((i, c)) = chars.next() {
-        if c == '[' {
-            has_rows = true;
-            // Found a '['
-            let start = i + 1;
-            let mut end = start;
-            while let Some(&(j, d)) = chars.peek() {
-                if d == ']' {
-                    end = j;
-                    chars.next(); // consume the ']'
-                    break;
-                } else {
-                    chars.next();
-                }
-            }
-            let row_content = &content[start..end];
-            let elements: Vec<String> = row_content
-                .split(',')
-                .map(|element| element.trim().to_string())
-                .collect();
-            rows.push(elements);
-        }
-    }
-
-    // If no rows were found with inner brackets, try splitting content into lines
-    if !has_rows {
-        let lines = content.lines();
-        for line in lines {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let line = line.trim_matches(|c| c == ',');
-
-            let line = if line.starts_with('[') && line.ends_with(']') {
-                &line[1..line.len() -1]
-            } else {
-                line
-            };
-            let elements: Vec<String> = line
-                .split(',')
-                .map(|element| element.trim().to_string())
-                .collect();
-            if !elements.is_empty() {
-                rows.push(elements);
-            }
-        }
-    }
-
-    let matrix = Matrix { rows };
-
-    if matrix.rows.is_empty() {
-        None
-    } else {
-        Some((name.to_string(), matrix))
-    }
+    let name = parts[0].trim().to_string();
+    let value = parts[1].trim().to_string();
+    return Some((name, value));
 }
 
-
-// Helper function to remove quotes from a string
-pub fn remove_quotes(s: &str) -> String {
-    s.trim_matches(|c| c == '\"' || c == '\'').to_string()
+// Helper function to parse matrices. We want a key-value pair
+pub fn extract_matrix_content(input: &str) -> Option<(String, Matrix)> {
+    // Separate name and matrix content
+    match extract_variable_value(input) {
+        Some((name, matrix_str)) => {
+            if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
+                return None;
+            }
+            let content = &matrix_str[1..matrix_str.len() - 1].trim();
+        
+            let mut rows = Vec::new();
+        
+            // Try to extract rows enclosed in inner brackets
+            let mut has_rows = false;
+            let mut chars = content.chars().enumerate().peekable();
+            while let Some((i, c)) = chars.next() {
+                if c == '[' {
+                    has_rows = true;
+                    // Found a '['
+                    let start = i + 1;
+                    let mut end = start;
+                    while let Some(&(j, d)) = chars.peek() {
+                        if d == ']' {
+                            end = j;
+                            chars.next(); // consume the ']'
+                            break;
+                        } else {
+                            chars.next();
+                        }
+                    }
+                    let row_content = &content[start..end];
+                    let elements: Vec<String> = row_content
+                        .split(',')
+                        .map(|element| element.trim().to_string())
+                        .collect();
+                    rows.push(elements);
+                }
+            }
+        
+            // If no rows were found with inner brackets, try splitting content into lines
+            if !has_rows {
+                let lines = content.lines();
+                for line in lines {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let line = line.trim_matches(|c| c == ',');
+        
+                    let line = if line.starts_with('[') && line.ends_with(']') {
+                        &line[1..line.len() -1]
+                    } else {
+                        line
+                    };
+                    let elements: Vec<String> = line
+                        .split(',')
+                        .map(|element| element.trim().to_string())
+                        .collect();
+                    if !elements.is_empty() {
+                        rows.push(elements);
+                    }
+                }
+            }
+        
+            let matrix = Matrix { rows };
+        
+            if matrix.rows.is_empty() {
+                None
+            } else {
+                Some((name.to_string(), matrix))
+            }
+        }
+        None => {
+            return None;
+        }
+    } 
+    
 }
 
 pub fn extract_variable_name(input: &str) -> Option<String> {
     // Match any word characters at the start, followed by whitespace,
     // then capture the final word/variable name which can include:
-    // - Regular word chars (a-z, A-Z, 0-9, _)
-    // - Common math variable patterns like dx, dy, etc.
-    // - Special math symbols commonly used in variables
-    let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*\s+(?:del\s+)?([a-zA-Z][a-zA-Z0-9_]*(?:d[xyz])?)")
+    // Handle multiple patterns:
+    // 1. Command words followed by a simple variable: "matrix A"
+    // 2. Command words followed by backslashed expressions: "fraction \\dx\\dy"
+    // 3. Optional 'del' modifier: "fraction del \\dx\\dy"
+    let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*\s+(?:del\s+)?(?:\\?([a-zA-Z][a-zA-Z0-9_]*)|(?:\\([^\\]+)\\([^\\]+)))")
         .unwrap();
 
-    re.captures(input)
-        .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().to_string())
+    if let Some(caps) = re.captures(input) {
+        // Try to get the first capture group (simple variable)
+        if let Some(m) = caps.get(1) {
+            return Some(m.as_str().to_string());
+        }
+        
+        // Get the fraction components and combine them with division symbol
+        if let (Some(numerator), Some(denominator)) = (caps.get(2), caps.get(3)) {
+            return Some(format!("{}/{}", numerator.as_str(), denominator.as_str()));
+        }
+    }
+    
+    None
 }
-
 // Helper function to extract string from pair
-pub fn extracted_string_content(input: &str) -> Option<String> {
+pub fn extract_string_content(input: &str) -> Option<String> {
     let first_quote = input.find(|c| c == '"' || c == '\'');
 
     if let Some(start_index) = first_quote {
