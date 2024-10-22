@@ -118,6 +118,8 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             println!("\n{}", state.document.body);
                             
                             parse_document_block(inner_pair, &mut state);
+
+                            state.append_to_body("\\end{document}\n".to_string());
                             return Ok(state.document.body);
                         },
                         _ => {
@@ -138,6 +140,10 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
 fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
     for document_pair in inner_pair.into_inner() {
         match document_pair.as_rule() {
+            Rule::text => {
+                println!("Extracted text: {:?}", document_pair.as_str());
+                state.append_to_body(document_pair.as_str().to_string());
+            }
             Rule::inline_math_expr | Rule::newline_math_expr=> {
                 println!("Extracted math: {:?}", document_pair.as_rule()); 
                 let delimiter = if document_pair.as_rule() == Rule::inline_math_expr {
@@ -215,7 +221,7 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 if let Some(var_name) = extract_variable_name(process_pair.as_str()) {
                     println!("Extracted variable: {}", var_name);
                     let matrix = state.matrices.get(&var_name).unwrap();
-                    println!("Fetched matrix: {:?}", matrix);
+                    println!("Fetched matrix: {:?}\n", matrix);
                     
                     let mut formattedRows = Vec::new();
                     for row in &matrix.rows {
@@ -247,45 +253,79 @@ pub fn extracted_matrix_content(input: &str) -> Option<(String, Matrix)> {
     if parts.len() != 2 {
         return None;
     }
-
     let name = parts[0].trim();
-
     let matrix_str = parts[1].trim();
+
+
+    
     if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
         return None;
     }
+    let content = &matrix_str[1..matrix_str.len() - 1].trim();
 
-    // Remove outer brackets, split into rows
-    let inner_content = &matrix_str[1..matrix_str.len() - 1].trim();
-    if !inner_content.starts_with('[') || !inner_content.ends_with(']') {
-        return None;
+    let mut rows = Vec::new();
+
+    // Try to extract rows enclosed in inner brackets
+    let mut has_rows = false;
+    let mut chars = content.chars().enumerate().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '[' {
+            has_rows = true;
+            // Found a '['
+            let start = i + 1;
+            let mut end = start;
+            while let Some(&(j, d)) = chars.peek() {
+                if d == ']' {
+                    end = j;
+                    chars.next(); // consume the ']'
+                    break;
+                } else {
+                    chars.next();
+                }
+            }
+            let row_content = &content[start..end];
+            let elements: Vec<String> = row_content
+                .split(',')
+                .map(|element| element.trim().to_string())
+                .collect();
+            rows.push(elements);
+        }
     }
 
-    let matrix: Matrix = inner_content
-        .split("]\n")
-        .map(|row| {
-            row.trim()
-                .trim_matches(|c| c == '[' || c == ']')
+    // If no rows were found with inner brackets, try splitting content into lines
+    if !has_rows {
+        let lines = content.lines();
+        for line in lines {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let line = line.trim_matches(|c| c == ',');
+
+            let line = if line.starts_with('[') && line.ends_with(']') {
+                &line[1..line.len() -1]
+            } else {
+                line
+            };
+            let elements: Vec<String> = line
                 .split(',')
-                .map(|element| {
-                    element
-                        .trim()
-                        .trim_matches(|c| c == '[' || c == ']')
-                        .to_string()
-                })  
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .filter(|row: &Vec<String>| !row.is_empty())
-        .collect();
+                .map(|element| element.trim().to_string())
+                .collect();
+            if !elements.is_empty() {
+                rows.push(elements);
+            }
+        }
+    }
+
+    let matrix = Matrix { rows };
 
     if matrix.rows.is_empty() {
-        return None;
+        None
     } else {
         Some((name.to_string(), matrix))
     }
-
 }
+
 
 // Helper function to remove quotes from a string
 pub fn remove_quotes(s: &str) -> String {

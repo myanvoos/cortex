@@ -19,9 +19,10 @@ document_class = { "documentclass" ~ "(" ~ string ~ ")" }
 title = { "title" ~ "(" ~ string ~ ")" }
 author = { "author" ~ "(" ~ (string ~ ("," ~ string)*) ~ ")" }
 
-matrix = { identifier ~ "=" ~ "[" ~ matrix_row+ ~ "]" }
+matrix = { identifier ~ "=" ~ "[" ~ matrix_row+ ~ ("," ~ matrix_row)* ~ "]" }
 matrix_row = { "[" ~ matrix_elements ~ "]" }
-matrix_elements = { identifier ~ ("," ~ identifier)* }
+matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
+matrix_element = { number | identifier}
 
 function = { 
     "function" ~ identifier ~ "(" ~ param_list? ~ ")" ~
