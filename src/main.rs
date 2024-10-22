@@ -1,23 +1,22 @@
 mod tokeniser;
 mod parser;
 
-fn main() {
-    let input = "
-    begin(setup)
-    documentclass('article')
-    A = [
-        [a, b, c]
-        [d, e, f]
-    ]
-    $(sum (n -> n-1) \\gx)
-    end(setup)
-    ";
+#[cfg(test)]
+mod tests;
 
-    let tokens = tokeniser::tokenise(input);
-    let tokens_clone = tokens.clone();
-    for token in tokens_clone {
-        print!("{:?}\n", token);
-    }
+fn main() {
+    // let input = "
+    // begin(setup)
+    // documentclass('article')
+    // A = [
+    //     [a, b, c]
+    //     [d, e, f]
+    // ]
+    // $(sum (n -> n-1) \\gx)
+    // end(setup)
+    // ";
+
+    // let tokens = tokeniser::tokenise(input);
 
     println!("\n\n\n\n");
     // parser::parse(tokens);
