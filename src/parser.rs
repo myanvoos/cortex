@@ -118,7 +118,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             // Print what we have so far for debugging
                             println!("\n{}", state.document.body);
                             
-                            parse_document_block(&inner_pair, &mut state);
+                            parse_document_block(inner_pair, &mut state);
                             return Ok(latex);
                         },
                         _ => {
@@ -138,11 +138,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
 }
 
 
-fn parse_document_block(inner_pair: &pest::iterators::Pair<Rule>, state: &LatexState) {
-
-}
-
-fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> Result<(), Box<dyn Error>>{
+fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
     for setup_pair in inner_pair.into_inner() {
         match setup_pair.as_rule() {
             Rule::document_class => {
@@ -164,6 +160,18 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                     state.set_title(title);
                 }
             },
+            Rule::inline_math_expr | Rule::newline_math_expr=> {
+                println!("Extracted math: {}", setup_pair.as_str()); 
+                
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> Result<(), Box<dyn Error>>{
+    for setup_pair in inner_pair.into_inner() {
+        match setup_pair.as_rule() {
             Rule::matrix => {
                 // state.append_to_body("\\begin{equation}\n".to_string());
                 
@@ -174,15 +182,32 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 if let Some((name, matrix)) = extracted_matrix_content(setup_pair.as_str()) {
                     state.add_matrix_to_map(name, matrix);
                 }
-
-                // state.append_to_body("\\end{pmatrix}\n".to_string());
-                // state.append_to_body("\\end{equation}\n".to_string());
             },
             
             _ => {}
         }
     }
     Ok(())
+}
+
+pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
+    for process_pair in inner_pair.into_inner() {
+        match process_pair.as_rule() {
+            Rule::matrix => {
+                state.append_to_body("\\begin{equation}\n".to_string());
+                
+                // TODO: Add support for other matrix types
+                // Pmatrix for now
+                state.append_to_body("\\begin{pmatrix}\n".to_string());
+        
+                
+        
+                state.append_to_body("\\end{pmatrix}\n".to_string());
+                state.append_to_body("\\end{equation}\n".to_string())
+            },
+            _ => {}
+        }
+    }
 }
 
 // Helper function to parse matrices. We want a key-value pair
