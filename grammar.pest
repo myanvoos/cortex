@@ -66,3 +66,16 @@ math_content = _{
     limit
 }
 
+integral = { "integral" ~ "(" ~ range ~ ")" ~ expr }
+bound_range = { identifier ~ "->" ~ identifier }
+matrix_usage = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
+matrix_modifier = { "transpose" | "inverse" } // matrix rendering
+matrix_style = { string }
+sum = { "sum" ~ "(" ~ range ~ ")" ~ expr }
+fraction = { "fraction" ~ fraction_modifier? ~ expr ~ expr }
+fraction_modifier = { "del" } // fraction rendering 
+limit = { "limit" ~ "(" ~ range ~ ")" ~ expr }
+expr = { (!"$" ~ "\\" ~ ANY)+ }
+
+// Main file structure
+file = { SOI ~ setup_block ~ document_block ~ EOI }
