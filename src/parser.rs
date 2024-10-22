@@ -50,6 +50,9 @@ pub struct SetupBlock {
 
 #[derive(Default)]
 pub struct DocumentBlock {
+    // Might move this to setup to fit grammar
+    // and make vectors with inline-math, newline-math, paragraphs etc
+    // so that we can use them in document block and move them around
     pub title: String,
     pub author: Vec<String>,
     pub body: String
@@ -109,6 +112,10 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                         Rule::document_block => {
                             let mut latex = String::new();
                             let _ = build_preamble(&mut state);
+
+                            // Print what we have so far for debugging
+                            println!("\n{}", state.document.body);
+                            
                             parse_document_block(&inner_pair, &mut state);
                             return Ok(latex);
                         },
@@ -138,10 +145,24 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
         match setup_pair.as_rule() {
             Rule::document_class => {
                 if let Some(content) = extracted_string_content(setup_pair.as_str()) {
-                    print!("Extracted document class: {}", content);
+                    println!("Extracted document class: {}", content);
                     state.set_document_class(content);
                 }
             },
+            Rule::author => {
+                // ONLY WORKS FOR SINGLE AUTHORS FOR NOW
+                if let Some(author) = extracted_string_content(setup_pair.as_str()) {
+                    println!("Extracted author: {}", author);
+                    state.add_author(author);
+                }
+            },
+            Rule::title => {
+                if let Some(title) = extracted_string_content(setup_pair.as_str()) {
+                    println!("Extracted title: {}", title);
+                    state.set_title(title);
+                }
+            },
+            
             
             _ => {}
         }
