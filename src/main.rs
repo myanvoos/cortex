@@ -1,43 +1,28 @@
-mod tokeniser;
+// src/main.rs
+
 mod parser;
 
-#[cfg(test)]
-mod tests;
+// use demoparser::parse_to_latex;
 
-fn main() {
-    // let input = "
-    // begin(setup)
-    // documentclass('article')
-    // A = [
-    //     [a, b, c]
-    //     [d, e, f]
-    // ]
-    // $(sum (n -> n-1) \\gx)
-    // end(setup)
-    // ";
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = r#"
+        begin(setup)
+        documentclass("article")
+        title("One of the first men on earth")
+        author("Emrys")
+        
+        A = [
+            [a, b, c]
+            [d, e, f]
+            [g, h, i]
+        ]
+        
+        end(setup)
+        
+        begin(document)
+        This is some text with math: $(matrix A)
+        end(document)
+    "#;
 
-    // let tokens = tokeniser::tokenise(input);
-
-    println!("\n\n\n\n");
-    // parser::parse(tokens);
-
+    Ok(())
 }
-
-// fn begin_setup() {
-//     print!("\\begin{{setup}}\n");
-// }
-
-// fn end_setup() {
-//     print!("\\end{{setup}}\n");
-// }
-
-// fn document_class(argument: &str) {
-//     println!("\\documentclass{{{}}}", argument);
-// }
-
-// fn translate_command(command: &str, argument: &str) {
-//     match command {
-//         "documentclass" => document_class(argument),
-//         _ => println!("Unknown command: {}", command),
-//     }
-// }

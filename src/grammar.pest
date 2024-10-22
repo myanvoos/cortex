@@ -1,0 +1,71 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+number = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string = { "\"" ~ value ~ "\"" }
+value = @{ (!"\"" ~ ANY)* }
+
+
+
+setup_block = {
+    "begin" ~ "(" ~ "setup" ~ ")" ~ setup_content* ~ "end" ~ "(" ~ "setup" ~ ")"
+}
+document_block = {
+    "begin" ~ "(" ~ "document" ~ ")" ~ document_content* ~ "end" ~ "(" ~ "document" ~ ")"
+}
+
+setup_content = _{
+    document_class |
+    title |
+    author |
+    matrix |
+    function | 
+    fraction
+}
+
+document_class = { "documentclass" ~ "(" ~ string ~ ")" }
+title = { "title" ~ "(" ~ string ~ ")" }
+author = { "author" ~ "(" ~ (string ~ ("," ~ string)*) ~ ")" }
+
+matrix = { identifier ~ "=" ~ "[" ~ matrix_row+ ~ "]" }
+matrix_row = { "[" ~ matrix_elements ~ "]" }
+matrix_elements = { identifier ~ ("," ~ identifier)* }
+
+function = { 
+    "function" ~ identifier ~ "(" ~ param_list? ~ ")" ~
+    "{" ~ function_body ~ "}"
+}
+
+param_list = { identifier ~ ("," ~ identifier)* }
+function_body = { (!"}" ~ ANY)* }
+
+document_content = _{
+    inline_math_expr |
+    newline_math_expr |
+    text
+}
+
+text = { (!("$(" | "$$(" | "begin(" | "end(") ~ ANY)+ }
+inline_math_expr = { "$" ~ "(" ~ math_content ~ ")" }
+newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
+
+math_content = _{
+    integral |
+    matrix_usage |
+    sum |
+    fraction |
+    limit
+}
+
+integral = { "integral" ~ "(" ~ range ~ ")" ~ expr }
+range = { identifier ~ "->" ~ identifier }
+matrix_usage = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
+matrix_modifier = { "transpose" | "inverse" }
+matrix_style = { string }
+sum = { "sum" ~ "(" ~ range ~ ")" ~ expr }
+fraction = { "fraction" ~ fraction_modifier? ~ expr ~ expr }
+fraction_modifier = { "del" }
+limit = { "limit" ~ "(" ~ range ~ ")" ~ expr }
+expr = { (!("$") ~ "\\" ~ ANY)+ }
+
+file = { SOI ~ setup_block ~ document_block ~ EOI }
