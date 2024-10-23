@@ -1,9 +1,10 @@
+use std::any::Any;
 use std::{collections::HashMap, error::Error, hash::Hash};
 use regex::Regex;
 use pest::Parser;
 use pest_derive::Parser;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 
 use crate::plugin::build_preamble;
@@ -123,9 +124,16 @@ impl LatexState {
         })
     }
 
-    pub fn get_python_variable(&self, var_name: &str) -> String {
-        let placeholder = String::new();
-        placeholder
+    pub fn get_python_variable(&self, var_name: &str) -> Py<PyAny> {
+        Python::with_gil(|py| {
+            let locals = self.py_locals.bind(py);
+
+            let value = locals.get_item(var_name).unwrap().expect("Error!");
+
+            println!("Variable: {}, Value: {}", var_name, value.to_string());
+
+            value.into_py(py)
+        })
     }
 
     // Helper methods to modify state of the latex
@@ -211,7 +219,18 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
         match document_pair.as_rule() {
             Rule::text => {
                 println!("Extracted text: {:?}", document_pair.as_str());
-                state.append_to_body(document_pair.as_str().trim().to_string());
+
+                // TODO: Make this into its own function
+                let text = document_pair.as_str().trim();
+                let first_char = text.chars().next().unwrap();
+                
+                if first_char.is_ascii_uppercase() || first_char == '.' || first_char == ':' {
+                    state.append_to_body(format!("{} ", text.to_string()));
+                } else if first_char.is_ascii_lowercase() {
+                    state.append_to_body(format!(" {} ", text.to_string()));
+                } else {
+                    state.append_to_body(format!("{}", text.to_string()));
+                }
             }
             Rule::inline_math_expr | Rule::newline_math_expr=> {
                 println!("Extracted math: {:?}", document_pair.as_rule()); 
@@ -285,8 +304,13 @@ fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState)
 
                 println!("Function: {}, Args: {}, Result: {:?}", func_name, args, result);
 
-                state.append_to_body(format!(" {}", result));
+                state.append_to_body(format!("{}", result));
             
+            }
+            Rule::identifier => {
+                let value = state.get_python_variable(code_pair.as_str());
+
+                state.append_to_body(format!("{}", value));
             }
             _ => {}
         }
@@ -320,7 +344,7 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 // Right now only one inner rule. 
                 // If we're adding import rule then need to change this for safety. 
                 let python_code = setup_pair.into_inner().as_str();
-                state.execute_python_code(python_code);
+                let _ = state.execute_python_code(python_code);
             }
             
             _ => {}
@@ -329,68 +353,125 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
     Ok(())
 }
 
-pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
-    for process_pair in inner_pair.into_inner() {
-        println!("\n{:?}\n", process_pair.as_str());
-        match process_pair.as_rule() {
+pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+    // Nested function to recursively process expressions
+    fn process_expression(pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+        match pair.as_rule() {
             Rule::matrix => {
+                println!("Reached a matrix!");
                 state.append_to_body("\\begin{equation}\n".to_string());
-                
-                // TODO: Add support for other matrix types
-                // Pmatrix for now
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
-        
-                // println!("Extracting matrix: {:?}", process_pair.as_str());  
-                if let Some(var_name) = extract_variable(process_pair.as_str()) {
-                    // println!("Extracted variable: {}", var_name);
-                    let matrix = state.matrices.get(&var_name).unwrap();
-                    // println!("Fetched matrix: {:?}\n", matrix);
-                    
-                    let mut formatted_rows = Vec::new();
-                    for row in &matrix.rows {
-                        for (i, element) in row.iter().enumerate() {
-                            if i == row.len() - 1 {
-                                formatted_rows.push(format!("{} \\\\\n", element));
-                            } else {
-                                formatted_rows.push(format!("{} & ", element));
+
+                let identifier = pair
+                    .into_inner()
+                    .find(|p| p.as_rule() == Rule::identifier)
+                    .map(|p| p.as_str())
+                    .unwrap_or("");
+
+                if !identifier.is_empty() {
+                    let _ = Python::with_gil(|py| {
+                        match get_matrix_elements(identifier, state, py) {
+                            Ok(elements) => {
+                                let mut formatted_rows = Vec::new();
+                                for row in elements {
+                                    let row_str = row.join(" & ");
+                                    formatted_rows.push(format!("{} \\\\\n", row_str));
+                                }
+
+                                println!("\nFormatted rows:\n{}\n", formatted_rows.join(""));
+                                state.append_to_body(formatted_rows.join(""));
+                            },
+                            Err(e) => {
+                                println!("Error processing matrix: {:?}", e);
                             }
                         }
-                    }
-                    state.append_to_body(formatted_rows.join(""));
-                } else {
-                    println!("Failed to extract variable");
+                        Ok::<(), ()>(())
+                    });
                 }
-            
+
                 state.append_to_body("\\end{pmatrix}\n".to_string());
-                state.append_to_body("\\end{equation}\n".to_string())
+                state.append_to_body("\\end{equation}\n".to_string());
             },
-            Rule::variable_usage => {
-                println!("Extracted variable: {:?}", process_pair.as_str());
-                state.append_to_body(state.variables.get(process_pair.as_str()).unwrap().to_string());
-            }
-            Rule::fraction => {
-                println!("Extracted fraction: {:?}", process_pair.as_str());
-                
-                if let Some(fraction) = extract_variable(process_pair.as_str()) {
-                    println!("Extracted variable: {}", fraction);
-                    let parts: Vec<&str> = fraction.split("/").collect();
-                    if parts.len() < 2 {
-                        return;
-                    }
-                    state.append_to_body(format!("\\frac{{{}}}{{{}}}", parts[0], parts[1]));
+            // Handle other expression types by recursively processing their children
+            Rule::sum_expression |
+            Rule::product_expression |
+            Rule::power_expression |
+            Rule::fraction |
+            Rule::primary_expression => {
+                for child in pair.into_inner() {
+                    process_expression(child, state);
                 }
-
-
-            }
+            },
+            // If it's a terminal node (number, identifier)
+            Rule::number |
+            Rule::identifier => {
+                let content = pair.as_str();
+                println!("Appending content: {}", content);
+                state.append_to_body(content.to_string());
+            },
             _ => {}
         }
     }
+
+    // Start processing from the top level
+    for pair in inner_pair.into_inner() {
+        process_expression(pair, state);
+    }
 }
+
+
+fn get_matrix_elements(identifier: &str, state: &LatexState, py: Python) -> PyResult<Vec<Vec<String>>> {
+    let locals = state.py_locals.bind(py);
+    let var = locals.get_item(identifier).unwrap().expect("Variable not found");
+
+    if var.hasattr("shape")? {
+        // It's a NumPy array
+        let matrix = var;
+        let shape = matrix.getattr("shape")?;
+        let rows = shape.get_item(0)?.extract::<usize>()?;
+        let cols = shape.get_item(1)?.extract::<usize>()?;
+
+        let mut elements = Vec::new();
+        for i in 0..rows {
+            let mut row = Vec::new();
+            for j in 0..cols {
+                let element = matrix.get_item((i, j))?;
+                let formatted_element = element.str()?.to_str()?.to_string();
+                row.push(formatted_element);
+            }
+            elements.push(row);
+        }
+        Ok(elements)
+    } else if var.is_instance_of::<PyList>() {
+        // It's a list of lists
+        let py_list = var.downcast::<PyList>()?;
+        let mut elements = Vec::new();
+        for item in py_list.iter() {
+            if item.is_instance_of::<PyList>() {
+                let row_list = item.downcast::<PyList>()?;
+                let mut row = Vec::new();
+                for element in row_list.iter() {
+                    let formatted_element = element.str()?.to_str()?.to_string();
+                    row.push(formatted_element);
+                }
+                elements.push(row);
+            } else {
+                // Single element, wrap it in a row
+                let formatted_element = item.str()?.to_str()?.to_string();
+                elements.push(vec![formatted_element]);
+            }
+        }
+        Ok(elements)
+    } else {
+        // Not a matrix
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!("Variable {} is not a matrix", identifier)))
+    }
+}
+
 
 pub fn extract_variable(input: &str) -> Option<String> {
     use regex::Regex;
 
-    // Updated regex pattern
     let re = Regex::new(r"^(?P<command>[a-zA-Z_][a-zA-Z0-9_]*)\s+(?:(?P<del>del)\s+)?(?P<expr>.+)$").unwrap();
 
     if let Some(caps) = re.captures(input) {

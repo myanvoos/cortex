@@ -20,8 +20,9 @@ author("Emrys")
         
 begin(python)
 A = "hello world"
-
-B = [ [1, 2, 3], [4, 5, 6] ]
+a = 5
+b = 6
+B = [ [1, a, b], [4, 5, 6], [[1, 2], 100, 1000] ]
 
 def add(a, b):
     return a + b
@@ -33,12 +34,13 @@ end(python)
 end(setup)
         
 begin(document)
-# This is some text with math: $(A)
+This is some text with math: >(A). This is another chunk of text just to test the formatting.
 
-# This is a matrix: $$(matrix B)
+This is a matrix: $$(matrix B)
 
-Printing a function: >(print_hello())
->(add(5, 6))
+Printing a function: >(print_hello()). Hi!
+
+Result of adding >(a) and >(b): >(add(5, 6))
 
 end(document)
     "#;

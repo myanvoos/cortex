@@ -69,7 +69,7 @@ document_content = _{
 // TODO: Possibly expand into its own system
 // =====================================================
 
-text              = { (!("$(" | "$$(" | ">(" | "begin(" | "end(") ~ ANY)+ }
+text              = { (!("$(" | "$$(" | ">(" | "begin(" | "end(") ~ ANY)+ ~ NEWLINE? }
 inline_math_expr  = { "$" ~ "(" ~ math_content ~ ")" }
 newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
 code_output = { ">" ~ "(" ~ (function_call | identifier) ~ ")" }
@@ -89,6 +89,7 @@ primary_expression = {
     fraction | 
     sum | 
     limit | 
+    matrix |
     variable_usage | 
     parenthesized_expression |
     number | 
