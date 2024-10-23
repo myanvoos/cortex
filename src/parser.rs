@@ -66,6 +66,13 @@ pub struct DocumentBlock {
 // SETUP: Implementing LatexState
 impl LatexState {
     pub fn new() -> Self {
+
+        // PYO3: Get a Python<'py> token using Python::with_gil
+        // This allows us to access the Python interpreter.
+        // Main objective here is to initialise the Python dictionary for storing local variables.
+
+        // Reference: https://docs.rs/pyo3/0.22.5/pyo3/marker/struct.Python.html#obtaining-a-python-token
+
         Python::with_gil(|py| {
             Self {
                 py_locals: PyDict::new(py).into(),
@@ -78,6 +85,15 @@ impl LatexState {
                 variables: HashMap::new(),
             }
         })
+    }
+    pub fn execute_python_code(&self, code: &str) -> String {
+        
+    }
+    pub fn call_python_function(&self, function_name: &str, args: Vec<String>) -> String {
+        
+    }
+    pub fn get_python_variable(&self, var_name: &str) -> String {
+        
     }
 
     // Helper methods to modify state of the latex
@@ -96,6 +112,8 @@ impl LatexState {
     pub fn append_to_body(&mut self, body: String) {
         self.document.body.push_str(&body);
     }
+
+    // Delete later
     pub fn add_matrix_to_map(&mut self, name: String, matrix: Matrix) {
         self.matrices.insert(name, matrix);
     }
