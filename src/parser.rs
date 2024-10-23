@@ -241,7 +241,7 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
         
                 // println!("Extracting matrix: {:?}", process_pair.as_str());  
-                if let Some(var_name) = extract_variable_name(process_pair.as_str()) {
+                if let Some(var_name) = extract_variable(process_pair.as_str()) {
                     // println!("Extracted variable: {}", var_name);
                     let matrix = state.matrices.get(&var_name).unwrap();
                     // println!("Fetched matrix: {:?}\n", matrix);
@@ -271,9 +271,15 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
             Rule::fraction => {
                 println!("Extracted fraction: {:?}", process_pair.as_str());
                 
-                if let Some(name) = extract_variable_name(process_pair.as_str()) {
-                    println!("Extracted variable: {}", name);
+                if let Some(fraction) = extract_variable(process_pair.as_str()) {
+                    println!("Extracted variable: {}", fraction);
+                    let parts: Vec<&str> = fraction.split("/").collect();
+                    if parts.len() < 2 {
+                        return;
+                    }
+                    state.append_to_body(format!("\\frac{{{}}}{{{}}}", parts[0], parts[1]));
                 }
+
 
             }
             _ => {}
@@ -371,30 +377,42 @@ pub fn extract_matrix_content(input: &str) -> Option<(String, Matrix)> {
     
 }
 
-pub fn extract_variable_name(input: &str) -> Option<String> {
-    // Match any word characters at the start, followed by whitespace,
-    // then capture the final word/variable name which can include:
-    // Handle multiple patterns:
-    // 1. Command words followed by a simple variable: "matrix A"
-    // 2. Command words followed by backslashed expressions: "fraction \\dx\\dy"
-    // 3. Optional 'del' modifier: "fraction del \\dx\\dy"
-    let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*\s+(?:del\s+)?(?:\\?([a-zA-Z][a-zA-Z0-9_]*)|(?:\\([^\\]+)\\([^\\]+)))")
-        .unwrap();
+pub fn extract_variable(input: &str) -> Option<String> {
+    use regex::Regex;
+
+    // Updated regex pattern
+    let re = Regex::new(r"^(?P<command>[a-zA-Z_][a-zA-Z0-9_]*)\s+(?:(?P<del>del)\s+)?(?P<expr>.+)$").unwrap();
 
     if let Some(caps) = re.captures(input) {
-        // Try to get the first capture group (simple variable)
-        if let Some(m) = caps.get(1) {
-            return Some(m.as_str().to_string());
-        }
-        
-        // Get the fraction components and combine them with division symbol
-        if let (Some(numerator), Some(denominator)) = (caps.get(2), caps.get(3)) {
-            return Some(format!("{}/{}", numerator.as_str(), denominator.as_str()));
+        // Extract the expression part
+        let expr = caps.name("expr")?.as_str().trim();
+
+        // Check if the expression starts with backslash
+        if expr.starts_with('\\') {
+            // Split the expression on backslashes
+            let parts: Vec<&str> = expr.split('\\').filter(|s| !s.is_empty()).collect();
+
+            if parts.len() == 2 {
+                // Fraction with numerator and denominator
+                return Some(format!("{}/{}", parts[0], parts[1]));
+            } else if parts.len() == 1 {
+                // Single variable with backslash
+                return Some(parts[0].to_string());
+            } else {
+                // Handle cases like "fraction \dx \dy \dz"
+                // Combine all parts with '/'
+                return Some(parts.join("/"));
+            }
+        } else {
+            // No backslash, assume variable name
+            return Some(expr.to_string());
         }
     }
-    
+
     None
 }
+
+
 // Helper function to extract string from pair
 pub fn extract_string_content(input: &str) -> Option<String> {
     let first_quote = input.find(|c| c == '"' || c == '\'');

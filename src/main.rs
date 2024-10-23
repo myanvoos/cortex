@@ -4,6 +4,8 @@ mod parser;
 mod plugin;
 mod tests;
 
+use pyo3::prelude::*;
+
 use crate::parser::parse_to_latex;
 
 // use demoparser::parse_to_latex;
@@ -15,34 +17,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title("One of the first men on earth")
         author("Emrys")
         
-        t = 1509
+// Python chunk
+A = "hello world"
 
-        asper = t
+a = int(6)
+b = int(5)
 
-        A = [
-            [a, b, c]
-            [d, e, f]
-            [g, h, i]
-        ]
+def add(a, b):
+    return a + b
 
-        B = [[1, 2, 3] [4, 5, 6]]
-        
+def print_hello():
+    return "hello world from inside a function"
+// End of Python chunk
+
         end(setup)
         
         begin(document)
-        This is some text with math: 
+        This is some text with math: $(A)
 
-        $$(matrix A)
-        $$(matrix B)
-        # hi
-        A variable is $(t). Text afterwards.
-        
-New line now: $$(asper)
+        $(print_hello())
+        Result from operation: $(add(100, 5))
+
+        Also adding $(a) + $(b)
 
 $(fraction \dy\dx)
 
         end(document)
     "#;
+
+    pyo3::prepare_freethreaded_python();
 
     match parse_to_latex(input) {
         Ok(latex) => {
