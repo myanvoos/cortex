@@ -37,7 +37,7 @@ begin(document)
 
 # This is a matrix: $$(matrix B)
 
-Printing a function: $(print_hello())
+Printing a function: >(print_hello())
 
 end(document)
     "#;

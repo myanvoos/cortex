@@ -161,7 +161,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
                         Rule::setup_block => {
-                            parse_setup_block(inner_pair, &mut state);
+                            let _ = parse_setup_block(inner_pair, &mut state);
                         },
                         Rule::document_block => {
 
@@ -221,7 +221,22 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                 } else {
                     state.append_to_body(format!("{}", delimiter.to_string()));
                 }
+            },
+            Rule::code_output => {
+
+                // Since code_output only has one child, code_representation, we can call into_inner() directly
+                
+                process_code(document_pair.into_inner(), state);
             }
+            _ => {}
+        }
+    }
+}
+
+fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+    for code_pair in inner_pair.into_inner() {
+        match code_pair.as_rule() {
+        
             _ => {}
         }
     }
@@ -265,8 +280,8 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
 
 pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
     for process_pair in inner_pair.into_inner() {
+        println!("\n{:?}\n", process_pair.as_str());
         match process_pair.as_rule() {
-
             Rule::matrix => {
                 state.append_to_body("\\begin{equation}\n".to_string());
                 
