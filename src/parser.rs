@@ -2,7 +2,9 @@ use std::{collections::HashMap, error::Error, hash::Hash};
 use regex::Regex;
 use pest::Parser;
 use pest_derive::Parser;
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+
 
 use crate::plugin::build_preamble;
 
@@ -75,7 +77,7 @@ impl LatexState {
 
         Python::with_gil(|py| {
             Self {
-                py_locals: PyDict::new(py).into(),
+                py_locals: PyDict::new_bound(py).into(),
                 setup: SetupBlock::default(),
                 document: DocumentBlock::default(),
 
@@ -86,14 +88,28 @@ impl LatexState {
             }
         })
     }
-    pub fn execute_python_code(&self, code: &str) -> String {
-        
+    pub fn execute_python_code(&self, code: &str) -> () {
+
+        Python::with_gil(|py| {
+
+            // NOTE FOR PERSONAL REFERENCE: First attaches the Python context py to self.py_locals
+            // Then py.run_bound to execute one or more Python statements in code
+            // It will return a PyDict (or similar Python struct) where each key:value corresponds to the variable name and value(s)
+
+            let locals = self.py_locals.bind(py);
+            py.run_bound(code, None, Some(locals)).unwrap();
+
+            println!("Local py dict: {:?}", self.py_locals.to_string());
+        })
     }
+    
     pub fn call_python_function(&self, function_name: &str, args: Vec<String>) -> String {
-        
+        let placeholder = String::new();
+        placeholder
     }
     pub fn get_python_variable(&self, var_name: &str) -> String {
-        
+        let placeholder = String::new();
+        placeholder
     }
 
     // Helper methods to modify state of the latex
@@ -152,7 +168,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             let _ = build_preamble(&mut state);
 
                             // DEBUG: Print what we have so far for debugging
-                            println!("\n{}", state.document.body);
+                            // println!("\n{}", state.document.body);
                             
                             parse_document_block(inner_pair, &mut state);
 
@@ -230,6 +246,15 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                     state.set_title(title);
                 }
             },
+            Rule::python_block => {
+                
+                // Right now only one inner rule. 
+                // If we're adding import rule then need to change this for safety. 
+                let python_code = setup_pair.into_inner().as_str();
+                let result = state.execute_python_code(python_code);
+                println!("Result of Python code execution: {:?}", result);
+                
+            }
             
             _ => {}
         }

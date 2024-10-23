@@ -7,4 +7,4 @@ edition = "2021"
 pest = "2.7"
 pest_derive = "2.7"
 regex = "*"
-pyo3 = { version = "0.19", features = ["extension-module"] }
+pyo3 = { version = "0.22.5", features = ["extension-module"] }

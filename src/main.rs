@@ -33,9 +33,9 @@ end(python)
 end(setup)
         
 begin(document)
-This is some text with math: $(A)
+# This is some text with math: $(A)
 
-This is a matrix: $$(matrix B)
+# This is a matrix: $$(matrix B)
 
 Printing a function: $(print_hello())
 

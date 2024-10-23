@@ -3,6 +3,7 @@
 // =================================
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
+NEWLINE = { "\n" | "\r\n" }
 
 // =================================
 // CORE TYPES
@@ -25,7 +26,7 @@ setup_block    = {
     "begin(setup)" ~ setup_content* ~ python_block? ~ "end(setup)"
 }
 python_block = {
-    "begin(python)" ~ python_content* ~ "end(python)"
+    "begin(python)" ~ NEWLINE? ~ python_content ~ NEWLINE? ~ "end(python)"
 }
 document_block = {
     "begin(document)" ~ document_content* ~ "end(document)"
@@ -52,7 +53,7 @@ setup_content = _{
   | author
 }
 
-python_content = _{ (!"end(python)" ~ ANY)+ }
+python_content = @{ (!("end(python)") ~ ANY)* }
 
 document_content = _{
     inline_math_expr
