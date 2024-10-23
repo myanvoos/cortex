@@ -38,6 +38,7 @@ begin(document)
 # This is a matrix: $$(matrix B)
 
 Printing a function: >(print_hello())
+>(add(5, 6))
 
 end(document)
     "#;

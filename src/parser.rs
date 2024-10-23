@@ -110,34 +110,16 @@ impl LatexState {
     pub fn call_python_function(&self, function_name: &str, args: &str) -> String {
         Python::with_gil(|py| {
             let locals = self.py_locals.bind(py);
+    
+            // Create the Python call expression
+            let call_expr = format!("{}{}",function_name, args);
+            println!("Evaluating Python expression: {}", call_expr);
             
-            // Get the function, with better error handling
-            let fun = match locals.get_item(function_name) {
-                Ok(Some(f)) => f,
-                Ok(None) => return format!("Function '{}' not found", function_name),
-                Err(e) => return format!("Error accessing function: {}", e)
-            };
-    
-            // Execute the function and handle the result
-            let result = if args.trim().is_empty() {
-                // No arguments case
-                match fun.call0() {
-                    Ok(res) => res,
-                    Err(e) => return format!("Error calling function: {}", e)
-                }
-            } else {
-                // With arguments case
-                match py.eval_bound(args, None, Some(locals)) {
-                    Ok(args_obj) => match fun.call1((args_obj,)) {
-                        Ok(res) => res,
-                        Err(e) => return format!("Error calling function with args: {}", e)
-                    },
-                    Err(e) => return format!("Error evaluating arguments: {}", e)
-                }
-            };
-    
-            // Convert result to string, handling potential conversion errors
-            result.to_string()
+            // Evaluate the complete function call
+            match py.eval_bound(&call_expr, None, Some(locals)) {
+                Ok(res) => res.to_string(),
+                Err(e) => format!("Error calling function: {}", e)
+            }
         })
     }
 
@@ -269,15 +251,41 @@ fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState)
                 
                 let mut inner_rules = code_pair.into_inner();
                 let func_name = inner_rules.next().unwrap().as_str();
-                let args_pair = inner_rules.next();
-                let args = if let Some(args_pair) = args_pair {
-                    args_pair.as_str()
-                } else {
-                    ""
-                };
-                let result = state.call_python_function(func_name, args);
 
-                println!("Result of calling function: {:?}", result);
+                let args = if let Some(args_pair) = inner_rules.next() {
+                    let arg_values: Vec<String> = args_pair.into_inner().map(|arg| match arg.as_rule() {
+                        Rule::sum_expression |
+                        Rule::product_expression |
+                        Rule::power_expression |
+                        Rule::primary_expression => {
+                            let mut value = String::new();
+                            for expr in arg.into_inner() {
+                                match expr.as_rule() {
+                                    Rule::number => value = expr.as_str().to_string(),
+                                    _ => value = expr.as_str().to_string(),
+                                }
+                            }
+                            value
+                        }
+                        _ => arg.as_str().to_string()
+                    })
+                    .collect();
+
+                    if arg_values.len() > 0 {
+                        format!("({args})", args=arg_values.join(","))
+                    } else {
+                        "()".to_string()
+                    }
+
+                } else {
+                    "()".to_string()
+                };
+
+                let result = state.call_python_function(func_name, &args);
+
+                println!("Function: {}, Args: {}, Result: {:?}", func_name, args, result);
+
+                state.append_to_body(format!(" {}", result));
             
             }
             _ => {}
