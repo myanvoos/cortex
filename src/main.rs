@@ -4,45 +4,48 @@ mod parser;
 mod plugin;
 mod tests;
 
+use pyo3::prelude::*;
+
 use crate::parser::parse_to_latex;
 
 // use demoparser::parse_to_latex;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = r#"
-        begin(setup)
-        documentclass("article")
-        title("One of the first men on earth")
-        author("Emrys")
+
+begin(setup)
+documentclass("article")
+title("One of the first men on earth")
+author("Emrys")
         
-        t = 1509
+begin(python)
+A = "hello world"
+a = 5
+b = 6
+B = [ [1, a, b], [4, 5, 6], [[1, 2], 100, 1000] ]
 
-        asper = t
+def add(a, b):
+    return a + b
 
-        A = [
-            [a, b, c]
-            [d, e, f]
-            [g, h, i]
-        ]
+def print_hello():
+    return "hello world from inside a function"
+end(python)
 
-        B = [[1, 2, 3] [4, 5, 6]]
+end(setup)
         
-        end(setup)
-        
-        begin(document)
-        This is some text with math: 
+begin(document)
+This is some text with math: >(A). This is another chunk of text just to test the formatting.
 
-        $$(matrix A)
-        $$(matrix B)
-        # hi
-        A variable is $(t). Text afterwards.
-        
-New line now: $$(asper)
+This is a matrix: $$(matrix B)
 
-$(fraction \dy\dx)
+Printing a function: >(print_hello()). Hi!
 
-        end(document)
+Result of adding >(a) and >(b): >(add(5, 6))
+
+end(document)
     "#;
+
+    pyo3::prepare_freethreaded_python();
 
     match parse_to_latex(input) {
         Ok(latex) => {

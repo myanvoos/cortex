@@ -1,7 +1,11 @@
+use std::any::Any;
 use std::{collections::HashMap, error::Error, hash::Hash};
 use regex::Regex;
 use pest::Parser;
 use pest_derive::Parser;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
+
 
 use crate::plugin::build_preamble;
 
@@ -13,13 +17,15 @@ use crate::plugin::build_preamble;
 pub struct LatexParser;
 
 // SETUP: Defining a struct to hold all the state variables. These will be defined in setup block.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct LatexState {
     pub setup: SetupBlock,
     pub document: DocumentBlock,
     pub matrices: HashMap<String, Matrix>,
     pub functions: HashMap<String, Function>,
-    pub variables: HashMap<String, String>
+    pub variables: HashMap<String, String>,
+
+    pub py_locals: Py<PyDict>
 }
 
 #[derive(Debug)]
@@ -63,8 +69,73 @@ pub struct DocumentBlock {
 // SETUP: Implementing LatexState
 impl LatexState {
     pub fn new() -> Self {
-        Self::default()
+
+        // PYO3: Get a Python<'py> token using Python::with_gil
+        // This allows us to access the Python interpreter.
+        // Main objective here is to initialise the Python dictionary for storing local variables.
+
+        // Reference: https://docs.rs/pyo3/0.22.5/pyo3/marker/struct.Python.html#obtaining-a-python-token
+
+        Python::with_gil(|py| {
+            Self {
+                py_locals: PyDict::new_bound(py).into(),
+                setup: SetupBlock::default(),
+                document: DocumentBlock::default(),
+
+                // Remove later because redundant
+                matrices: HashMap::new(),
+                functions: HashMap::new(),
+                variables: HashMap::new(),
+            }
+        })
     }
+    pub fn execute_python_code(&self, code: &str) -> Result<(), String> {
+
+        // TODO: Add further string processing for distinguishing between types. 
+        // Right now everything is treated as a string
+        
+        Python::with_gil(|py| {
+
+            // NOTE FOR PERSONAL REFERENCE: First attaches the Python context py to self.py_locals
+            // Then py.run_bound to execute one or more Python statements in code
+            // It will return a PyDict (or similar Python struct) where each key:value corresponds to the variable name and value(s)
+
+            let locals = self.py_locals.bind(py);
+            py.run_bound(code, None, Some(locals)).unwrap();
+
+            println!("Local py dict: {:?}", self.py_locals.to_string());
+        });
+        Ok(())
+    }
+
+    pub fn call_python_function(&self, function_name: &str, args: &str) -> String {
+        Python::with_gil(|py| {
+            let locals = self.py_locals.bind(py);
+    
+            // Create the Python call expression
+            let call_expr = format!("{}{}",function_name, args);
+            println!("Evaluating Python expression: {}", call_expr);
+            
+            // Evaluate the complete function call
+            match py.eval_bound(&call_expr, None, Some(locals)) {
+                Ok(res) => res.to_string(),
+                Err(e) => format!("Error calling function: {}", e)
+            }
+        })
+    }
+
+    pub fn get_python_variable(&self, var_name: &str) -> Py<PyAny> {
+        Python::with_gil(|py| {
+            let locals = self.py_locals.bind(py);
+
+            let value = locals.get_item(var_name).unwrap().expect("Error!");
+
+            println!("Variable: {}, Value: {}", var_name, value.to_string());
+
+            value.into_py(py)
+        })
+    }
+
     // Helper methods to modify state of the latex
     pub fn set_title(&mut self, title: String) {
         self.document.title = title;
@@ -81,6 +152,8 @@ impl LatexState {
     pub fn append_to_body(&mut self, body: String) {
         self.document.body.push_str(&body);
     }
+
+    // Delete later
     pub fn add_matrix_to_map(&mut self, name: String, matrix: Matrix) {
         self.matrices.insert(name, matrix);
     }
@@ -109,7 +182,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
                         Rule::setup_block => {
-                            parse_setup_block(inner_pair, &mut state);
+                            let _ = parse_setup_block(inner_pair, &mut state);
                         },
                         Rule::document_block => {
 
@@ -119,7 +192,7 @@ pub fn parse_to_latex(input: &str) -> Result<String, pest::error::Error<Rule>> {
                             let _ = build_preamble(&mut state);
 
                             // DEBUG: Print what we have so far for debugging
-                            println!("\n{}", state.document.body);
+                            // println!("\n{}", state.document.body);
                             
                             parse_document_block(inner_pair, &mut state);
 
@@ -146,7 +219,18 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
         match document_pair.as_rule() {
             Rule::text => {
                 println!("Extracted text: {:?}", document_pair.as_str());
-                state.append_to_body(document_pair.as_str().trim().to_string());
+
+                // TODO: Make this into its own function
+                let text = document_pair.as_str().trim();
+                let first_char = text.chars().next().unwrap();
+                
+                if first_char.is_ascii_uppercase() || first_char == '.' || first_char == ':' {
+                    state.append_to_body(format!("{} ", text.to_string()));
+                } else if first_char.is_ascii_lowercase() {
+                    state.append_to_body(format!(" {} ", text.to_string()));
+                } else {
+                    state.append_to_body(format!("{}", text.to_string()));
+                }
             }
             Rule::inline_math_expr | Rule::newline_math_expr=> {
                 println!("Extracted math: {:?}", document_pair.as_rule()); 
@@ -169,6 +253,64 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                 } else {
                     state.append_to_body(format!("{}", delimiter.to_string()));
                 }
+            },
+            Rule::code_output => {
+                process_code(document_pair, state);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+    for code_pair in inner_pair.into_inner() {
+        match code_pair.as_rule() {
+            Rule::function_call => {
+                // println!("Extracted function call: {:?}", code_pair.as_str());    
+                
+                let mut inner_rules = code_pair.into_inner();
+                let func_name = inner_rules.next().unwrap().as_str();
+
+                let args = if let Some(args_pair) = inner_rules.next() {
+                    let arg_values: Vec<String> = args_pair.into_inner().map(|arg| match arg.as_rule() {
+                        Rule::sum_expression |
+                        Rule::product_expression |
+                        Rule::power_expression |
+                        Rule::primary_expression => {
+                            let mut value = String::new();
+                            for expr in arg.into_inner() {
+                                match expr.as_rule() {
+                                    Rule::number => value = expr.as_str().to_string(),
+                                    _ => value = expr.as_str().to_string(),
+                                }
+                            }
+                            value
+                        }
+                        _ => arg.as_str().to_string()
+                    })
+                    .collect();
+
+                    if arg_values.len() > 0 {
+                        format!("({args})", args=arg_values.join(","))
+                    } else {
+                        "()".to_string()
+                    }
+
+                } else {
+                    "()".to_string()
+                };
+
+                let result = state.call_python_function(func_name, &args);
+
+                println!("Function: {}, Args: {}, Result: {:?}", func_name, args, result);
+
+                state.append_to_body(format!("{}", result));
+            
+            }
+            Rule::identifier => {
+                let value = state.get_python_variable(code_pair.as_str());
+
+                state.append_to_body(format!("{}", value));
             }
             _ => {}
         }
@@ -197,27 +339,12 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                     state.set_title(title);
                 }
             },
-            Rule::matrix => {
-                // state.append_to_body("\\begin{equation}\n".to_string());
+            Rule::python_block => {
                 
-                // TODO: Add support for other matrix types
-                // Pmatrix for now
-                // state.append_to_body("\\begin{pmatrix}\n".to_string());
-                
-                if let Some((name, matrix)) = extract_matrix_content(setup_pair.as_str()) {
-                    state.add_matrix_to_map(name, matrix);
-                }
-            },
-            Rule::variable => {
-                println!("Extracted variable: {:?}", setup_pair.as_str());
-
-                let parts: Vec<&str> = setup_pair.as_str().split("=").collect();
-                if parts.len() != 2 {
-                    return Err("Invalid variable definition".into());
-                }
-                let name = parts[0].trim();
-                let value = parts[1].trim();
-                state.add_variable_to_map(name.to_string(), value.to_string());
+                // Right now only one inner rule. 
+                // If we're adding import rule then need to change this for safety. 
+                let python_code = setup_pair.into_inner().as_str();
+                let _ = state.execute_python_code(python_code);
             }
             
             _ => {}
@@ -226,161 +353,125 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
     Ok(())
 }
 
-pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) -> () {
-    for process_pair in inner_pair.into_inner() {
-        match process_pair.as_rule() {
-
-            // NOTE: matrix_usage is NOT matrix!!
-            // matrix is the code definition of a matrix in setup
-            // matrix_usage is the usage of a matrix in the document, in the form $(matrix A) or similar
-            Rule::matrix_usage => {
+pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+    // Nested function to recursively process expressions
+    fn process_expression(pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
+        match pair.as_rule() {
+            Rule::matrix => {
+                println!("Reached a matrix!");
                 state.append_to_body("\\begin{equation}\n".to_string());
-                
-                // TODO: Add support for other matrix types
-                // Pmatrix for now
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
-        
-                // println!("Extracting matrix: {:?}", process_pair.as_str());  
-                if let Some(var_name) = extract_variable(process_pair.as_str()) {
-                    // println!("Extracted variable: {}", var_name);
-                    let matrix = state.matrices.get(&var_name).unwrap();
-                    // println!("Fetched matrix: {:?}\n", matrix);
-                    
-                    let mut formatted_rows = Vec::new();
-                    for row in &matrix.rows {
-                        for (i, element) in row.iter().enumerate() {
-                            if i == row.len() - 1 {
-                                formatted_rows.push(format!("{} \\\\\n", element));
-                            } else {
-                                formatted_rows.push(format!("{} & ", element));
+
+                let identifier = pair
+                    .into_inner()
+                    .find(|p| p.as_rule() == Rule::identifier)
+                    .map(|p| p.as_str())
+                    .unwrap_or("");
+
+                if !identifier.is_empty() {
+                    let _ = Python::with_gil(|py| {
+                        match get_matrix_elements(identifier, state, py) {
+                            Ok(elements) => {
+                                let mut formatted_rows = Vec::new();
+                                for row in elements {
+                                    let row_str = row.join(" & ");
+                                    formatted_rows.push(format!("{} \\\\\n", row_str));
+                                }
+
+                                println!("\nFormatted rows:\n{}\n", formatted_rows.join(""));
+                                state.append_to_body(formatted_rows.join(""));
+                            },
+                            Err(e) => {
+                                println!("Error processing matrix: {:?}", e);
                             }
                         }
-                    }
-                    state.append_to_body(formatted_rows.join(""));
-                } else {
-                    println!("Failed to extract variable");
+                        Ok::<(), ()>(())
+                    });
                 }
-            
+
                 state.append_to_body("\\end{pmatrix}\n".to_string());
-                state.append_to_body("\\end{equation}\n".to_string())
+                state.append_to_body("\\end{equation}\n".to_string());
             },
-            Rule::variable_usage => {
-                println!("Extracted variable: {:?}", process_pair.as_str());
-                state.append_to_body(state.variables.get(process_pair.as_str()).unwrap().to_string());
-            }
-            Rule::fraction => {
-                println!("Extracted fraction: {:?}", process_pair.as_str());
-                
-                if let Some(fraction) = extract_variable(process_pair.as_str()) {
-                    println!("Extracted variable: {}", fraction);
-                    let parts: Vec<&str> = fraction.split("/").collect();
-                    if parts.len() < 2 {
-                        return;
-                    }
-                    state.append_to_body(format!("\\frac{{{}}}{{{}}}", parts[0], parts[1]));
+            // Handle other expression types by recursively processing their children
+            Rule::sum_expression |
+            Rule::product_expression |
+            Rule::power_expression |
+            Rule::fraction |
+            Rule::primary_expression => {
+                for child in pair.into_inner() {
+                    process_expression(child, state);
                 }
-
-
-            }
+            },
+            // If it's a terminal node (number, identifier)
+            Rule::number |
+            Rule::identifier => {
+                let content = pair.as_str();
+                println!("Appending content: {}", content);
+                state.append_to_body(content.to_string());
+            },
             _ => {}
         }
     }
-}
 
-// Helper function to extract name, value from variable
-pub fn extract_variable_value(input: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = input.split("=").collect();
-    if parts.len() != 2 {
-        return None;
+    // Start processing from the top level
+    for pair in inner_pair.into_inner() {
+        process_expression(pair, state);
     }
-    let name = parts[0].trim().to_string();
-    let value = parts[1].trim().to_string();
-    return Some((name, value));
 }
 
-// Helper function to parse matrices. We want a key-value pair
-pub fn extract_matrix_content(input: &str) -> Option<(String, Matrix)> {
-    // Separate name and matrix content
-    match extract_variable_value(input) {
-        Some((name, matrix_str)) => {
-            if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
-                return None;
+
+fn get_matrix_elements(identifier: &str, state: &LatexState, py: Python) -> PyResult<Vec<Vec<String>>> {
+    let locals = state.py_locals.bind(py);
+    let var = locals.get_item(identifier).unwrap().expect("Variable not found");
+
+    if var.hasattr("shape")? {
+        // It's a NumPy array
+        let matrix = var;
+        let shape = matrix.getattr("shape")?;
+        let rows = shape.get_item(0)?.extract::<usize>()?;
+        let cols = shape.get_item(1)?.extract::<usize>()?;
+
+        let mut elements = Vec::new();
+        for i in 0..rows {
+            let mut row = Vec::new();
+            for j in 0..cols {
+                let element = matrix.get_item((i, j))?;
+                let formatted_element = element.str()?.to_str()?.to_string();
+                row.push(formatted_element);
             }
-            let content = &matrix_str[1..matrix_str.len() - 1].trim();
-        
-            let mut rows = Vec::new();
-        
-            // Try to extract rows enclosed in inner brackets
-            let mut has_rows = false;
-            let mut chars = content.chars().enumerate().peekable();
-            while let Some((i, c)) = chars.next() {
-                if c == '[' {
-                    has_rows = true;
-                    // Found a '['
-                    let start = i + 1;
-                    let mut end = start;
-                    while let Some(&(j, d)) = chars.peek() {
-                        if d == ']' {
-                            end = j;
-                            chars.next(); // consume the ']'
-                            break;
-                        } else {
-                            chars.next();
-                        }
-                    }
-                    let row_content = &content[start..end];
-                    let elements: Vec<String> = row_content
-                        .split(',')
-                        .map(|element| element.trim().to_string())
-                        .collect();
-                    rows.push(elements);
+            elements.push(row);
+        }
+        Ok(elements)
+    } else if var.is_instance_of::<PyList>() {
+        // It's a list of lists
+        let py_list = var.downcast::<PyList>()?;
+        let mut elements = Vec::new();
+        for item in py_list.iter() {
+            if item.is_instance_of::<PyList>() {
+                let row_list = item.downcast::<PyList>()?;
+                let mut row = Vec::new();
+                for element in row_list.iter() {
+                    let formatted_element = element.str()?.to_str()?.to_string();
+                    row.push(formatted_element);
                 }
-            }
-        
-            // If no rows were found with inner brackets, try splitting content into lines
-            if !has_rows {
-                let lines = content.lines();
-                for line in lines {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let line = line.trim_matches(|c| c == ',');
-        
-                    let line = if line.starts_with('[') && line.ends_with(']') {
-                        &line[1..line.len() -1]
-                    } else {
-                        line
-                    };
-                    let elements: Vec<String> = line
-                        .split(',')
-                        .map(|element| element.trim().to_string())
-                        .collect();
-                    if !elements.is_empty() {
-                        rows.push(elements);
-                    }
-                }
-            }
-        
-            let matrix = Matrix { rows };
-        
-            if matrix.rows.is_empty() {
-                None
+                elements.push(row);
             } else {
-                Some((name.to_string(), matrix))
+                // Single element, wrap it in a row
+                let formatted_element = item.str()?.to_str()?.to_string();
+                elements.push(vec![formatted_element]);
             }
         }
-        None => {
-            return None;
-        }
-    } 
-    
+        Ok(elements)
+    } else {
+        // Not a matrix
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!("Variable {} is not a matrix", identifier)))
+    }
 }
+
 
 pub fn extract_variable(input: &str) -> Option<String> {
     use regex::Regex;
 
-    // Updated regex pattern
     let re = Regex::new(r"^(?P<command>[a-zA-Z_][a-zA-Z0-9_]*)\s+(?:(?P<del>del)\s+)?(?P<expr>.+)$").unwrap();
 
     if let Some(caps) = re.captures(input) {

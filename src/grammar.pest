@@ -1,123 +1,145 @@
-//=================================
+// =================================
+// WHITESPACE and COMMENTS
+// =================================
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
+COMMENT    = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
+NEWLINE = { "\n" | "\r\n" }
 
-//=================================
+// =================================
 // CORE TYPES
-//=================================
-identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-number = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-string = { "\"" ~ string_value ~ "\"" }
-string_value = @{ (!("\"" | "@" | "/" ) ~ ANY)* }
+// =================================
+identifier   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+number       = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string       =  { "\"" ~ string_value ~ "\"" }
+string_value = @{ (!("\"" | "@" | "/") ~ ANY)* }
 
-//=================================
+// =================================
 // DOCUMENT STRUCTURE
-//=================================
+//
+// Setup: Specify document metadata such as title, author, etc. 
+// Also any Python blocks
+// Document: For rendering to LaTeX
+// =================================
 file = { SOI ~ setup_block ~ document_block ~ EOI }
 
-setup_block = {
-    "begin" ~ "(" ~ "setup" ~ ")" ~ 
-    setup_content* 
-    ~ "end" ~ "(" ~ "setup" ~ ")"
+setup_block    = {
+    "begin(setup)" ~ setup_content* ~ python_block? ~ "end(setup)"
+}
+python_block = {
+    "begin(python)" ~ NEWLINE? ~ python_content ~ NEWLINE? ~ "end(python)"
 }
 document_block = {
-    "begin" ~ "(" ~ "document" ~ ")" ~ 
-    document_content* 
-    ~ "end" ~ "(" ~ "document" ~ ")"
+    "begin(document)" ~ document_content* ~ "end(document)"
 }
 
-//==================================
+// ==================================
 // DOCUMENT METADATA
-//==================================
+//
+// TODO: Add use_options and expand document_class
+// ==================================
 document_class = { "documentclass" ~ "(" ~ string ~ ")" }
-title = { "title" ~ "(" ~ string ~ ")" }
-author = { "author" ~ "(" ~ author_list ~ ")" }
-author_list = { string ~ ("," ~ string)* }
+title          = { "title" ~ "(" ~ string ~ ")" }
+author         = { "author" ~ "(" ~ author_list ~ ")" }
+author_list    = { string ~ ("," ~ string)* }
 
-//=================================
+// =================================
 // CONTENT TYPES
-//=================================
+//
+// TODO: Support for other languages
+// =================================
 setup_content = _{
-    document_class |
-    title |
-    author |
-    matrix |
-    function | 
-    variable
+    document_class
+  | title
+  | author
 }
+
+python_content = @{ (!("end(python)") ~ ANY)* }
 
 document_content = _{
-    inline_math_expr |
-    newline_math_expr |
-    text
+    inline_math_expr
+  | newline_math_expr
+  | code_output
+  | text
 }
 
-//=============================
-// MATH EXPRESSIONS
-//=============================
-math_content = _{
-    integral |
-    matrix_usage |
-    sum |
-    fraction |
-    limit |
-    variable_usage
-}
+// ====================================================
+// MATH EXPRESSIONS (with operation precedence)
+//
+// NOTE: This is for rendering within the document block!
+// TODO: Possibly expand into its own system
+// =====================================================
 
-text = { (!("$(" | "$$(" | "begin(" | "end(") ~ ANY)+ }
-inline_math_expr = { "$" ~ "(" ~ math_content ~ ")" }
+text              = { (!("$(" | "$$(" | ">(" | "begin(" | "end(") ~ ANY)+ ~ NEWLINE? }
+inline_math_expr  = { "$" ~ "(" ~ math_content ~ ")" }
 newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
+code_output = { ">" ~ "(" ~ (function_call | identifier) ~ ")" }
 
-//==================================
+math_content = _{ expression }
+
+expression = _{ sum_expression }
+
+sum_expression = { product_expression ~ (add_op ~ product_expression)* }
+
+product_expression = { power_expression ~ (mul_op ~ power_expression)* }
+
+power_expression = { primary_expression ~ ("^" ~ power_expression)? }
+
+primary_expression = {
+    integral | 
+    fraction | 
+    sum | 
+    limit | 
+    matrix |
+    variable_usage | 
+    parenthesized_expression |
+    number | 
+    identifier |
+    single_variable_usage
+}
+
+add_op = { "+" | "-" }
+mul_op = { "*" | "/" }
+
+function_call = { identifier ~ "(" ~ arg_list? ~ ")" }
+arg_list = { expression ~ ("," ~ expression)* }
+
+parenthesized_expression = { "(" ~ expression ~ ")" }
+
+// ==========================================================================================
 // MATRIX DEFINITIONS
 //
-// - matrix: defines the matrix in setup block i.e. a = [...]
-// - matrix usage: the use of matrix in document block i.e. $(matrix A)
-//==================================
-matrix = { identifier ~ "=" ~ "[" ~ matrix_rows ~ "]" }
-matrix_rows = { matrix_row+ ~ ("," ~ matrix_row)* }
-matrix_row = { "[" ~ matrix_elements ~ "]" }
-matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
-matrix_element = { number | identifier}
+// Note: They need their own section because the rendering logic is different from other maths
+// ===========================================================================================
+// matrix          = { identifier ~ "=" ~ "[" ~ matrix_rows ~ "]" }
+// matrix_rows     = { matrix_row+ ~ ("," ~ matrix_row)* }
+// matrix_row      = { "[" ~ matrix_elements ~ "]" }
+// matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
+// matrix_element  = { number | identifier }
 
-matrix_usage = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
+matrix    = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
 matrix_modifier = { "transpose" | "inverse" }
-matrix_style = { string }
+matrix_style    = { string }
 
-//===================================
-// FUNCTION DEFINITIONS
-//===================================
-function = { 
-    "function" ~ identifier ~ "(" ~ param_list? ~ ")" ~
-    "{" ~ function_body ~ "}"
-}
-param_list = { identifier ~ ("," ~ identifier)* }
-function_body = { (!"}" ~ ANY)* }
+// ===============================
+// MATH OPERATIONS
+// ===============================
 
-//===============================
-// VARIABLES AND USAGE
-//
-// - variable: expressions like a = b, defined in setup
-// - variable usage: expressions for calling in document i.e. $(t), $(metadata), $
-// - expr: expressions like $(\dx\dy) to distinguish between multiple variables
-//===============================
-variable = { identifier ~ "=" ~ (number | identifier) }
-variable_usage = { identifier }
+integral = { "integral" ~ range? ~ expression ~ differential? }
+differential = { ("d" ~ identifier) }
 
-expr = { command+ } 
-command = { "\\" ~ variable_usage }
+range    = { "(" ~ expression ~ "->" ~ expression ~ ")" }
 
-//=================================
-// MATHEMATICAL OPERATIONS
-//
-//=================================
-integral = { "integral" ~ "(" ~ range ~ ")" ~ expr }
-range = { identifier ~ "->" ~ identifier }
+sum = { "sum" ~ range? ~ expression }
 
-sum = { "sum" ~ "(" ~ range ~ ")" ~ expr }
-
-fraction = { "fraction" ~ fraction_modifier? ~ expr }
+fraction          = { "fraction" ~ fraction_modifier? ~ expression ~ expression? }
 fraction_modifier = { "del" }
 
-limit = { "limit" ~ "(" ~ range ~ ")" ~ expr }
+limit = { "limit" ~ range? ~ expression }
 
+variable_usage = { "\\" ~ identifier }
+single_variable_usage = { identifier }
+
+//=======================================
+// TODO: Add support for easy table rendering
+//
+//========================================
