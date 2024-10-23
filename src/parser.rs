@@ -88,7 +88,7 @@ impl LatexState {
             }
         })
     }
-    pub fn execute_python_code(&self, code: &str) -> () {
+    pub fn execute_python_code(&self, code: &str) -> Result<(), String> {
 
         // TODO: Add further string processing for distinguishing between types. 
         // Right now everything is treated as a string
@@ -103,13 +103,44 @@ impl LatexState {
             py.run_bound(code, None, Some(locals)).unwrap();
 
             println!("Local py dict: {:?}", self.py_locals.to_string());
+        });
+        Ok(())
+    }
+
+    pub fn call_python_function(&self, function_name: &str, args: &str) -> String {
+        Python::with_gil(|py| {
+            let locals = self.py_locals.bind(py);
+            
+            // Get the function, with better error handling
+            let fun = match locals.get_item(function_name) {
+                Ok(Some(f)) => f,
+                Ok(None) => return format!("Function '{}' not found", function_name),
+                Err(e) => return format!("Error accessing function: {}", e)
+            };
+    
+            // Execute the function and handle the result
+            let result = if args.trim().is_empty() {
+                // No arguments case
+                match fun.call0() {
+                    Ok(res) => res,
+                    Err(e) => return format!("Error calling function: {}", e)
+                }
+            } else {
+                // With arguments case
+                match py.eval_bound(args, None, Some(locals)) {
+                    Ok(args_obj) => match fun.call1((args_obj,)) {
+                        Ok(res) => res,
+                        Err(e) => return format!("Error calling function with args: {}", e)
+                    },
+                    Err(e) => return format!("Error evaluating arguments: {}", e)
+                }
+            };
+    
+            // Convert result to string, handling potential conversion errors
+            result.to_string()
         })
     }
 
-    pub fn call_python_function(&self, function_name: &str, args: Vec<String>) -> String {
-        let placeholder = String::new();
-        placeholder
-    }
     pub fn get_python_variable(&self, var_name: &str) -> String {
         let placeholder = String::new();
         placeholder
@@ -223,10 +254,7 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                 }
             },
             Rule::code_output => {
-
-                // Since code_output only has one child, code_representation, we can call into_inner() directly
-                
-                process_code(document_pair.into_inner(), state);
+                process_code(document_pair, state);
             }
             _ => {}
         }
@@ -236,7 +264,22 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
 fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
     for code_pair in inner_pair.into_inner() {
         match code_pair.as_rule() {
-        
+            Rule::function_call => {
+                // println!("Extracted function call: {:?}", code_pair.as_str());    
+                
+                let mut inner_rules = code_pair.into_inner();
+                let func_name = inner_rules.next().unwrap().as_str();
+                let args_pair = inner_rules.next();
+                let args = if let Some(args_pair) = args_pair {
+                    args_pair.as_str()
+                } else {
+                    ""
+                };
+                let result = state.call_python_function(func_name, args);
+
+                println!("Result of calling function: {:?}", result);
+            
+            }
             _ => {}
         }
     }

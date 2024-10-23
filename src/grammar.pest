@@ -72,7 +72,7 @@ document_content = _{
 text              = { (!("$(" | "$$(" | ">(" | "begin(" | "end(") ~ ANY)+ }
 inline_math_expr  = { "$" ~ "(" ~ math_content ~ ")" }
 newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
-code_output = { ">" ~ "(" ~ code_representation ~ ")" }
+code_output = { ">" ~ "(" ~ (function_call | identifier) ~ ")" }
 
 math_content = _{ expression }
 
@@ -101,7 +101,6 @@ mul_op = { "*" | "/" }
 
 function_call = { identifier ~ "(" ~ arg_list? ~ ")" }
 arg_list = { expression ~ ("," ~ expression)* }
-code_representation = { function_call | identifier }
 
 parenthesized_expression = { "(" ~ expression ~ ")" }
 
