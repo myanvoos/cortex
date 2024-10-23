@@ -90,6 +90,9 @@ impl LatexState {
     }
     pub fn execute_python_code(&self, code: &str) -> () {
 
+        // TODO: Add further string processing for distinguishing between types. 
+        // Right now everything is treated as a string
+        
         Python::with_gil(|py| {
 
             // NOTE FOR PERSONAL REFERENCE: First attaches the Python context py to self.py_locals
@@ -102,7 +105,7 @@ impl LatexState {
             println!("Local py dict: {:?}", self.py_locals.to_string());
         })
     }
-    
+
     pub fn call_python_function(&self, function_name: &str, args: Vec<String>) -> String {
         let placeholder = String::new();
         placeholder
@@ -251,9 +254,7 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 // Right now only one inner rule. 
                 // If we're adding import rule then need to change this for safety. 
                 let python_code = setup_pair.into_inner().as_str();
-                let result = state.execute_python_code(python_code);
-                println!("Result of Python code execution: {:?}", result);
-                
+                state.execute_python_code(python_code);
             }
             
             _ => {}
@@ -318,96 +319,6 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
             _ => {}
         }
     }
-}
-
-// Helper function to extract name, value from variable
-pub fn extract_variable_value(input: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = input.split("=").collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let name = parts[0].trim().to_string();
-    let value = parts[1].trim().to_string();
-    return Some((name, value));
-}
-
-// Helper function to parse matrices. We want a key-value pair
-pub fn extract_matrix_content(input: &str) -> Option<(String, Matrix)> {
-    // Separate name and matrix content
-    match extract_variable_value(input) {
-        Some((name, matrix_str)) => {
-            if !matrix_str.starts_with('[') || !matrix_str.ends_with(']') {
-                return None;
-            }
-            let content = &matrix_str[1..matrix_str.len() - 1].trim();
-        
-            let mut rows = Vec::new();
-        
-            // Try to extract rows enclosed in inner brackets
-            let mut has_rows = false;
-            let mut chars = content.chars().enumerate().peekable();
-            while let Some((i, c)) = chars.next() {
-                if c == '[' {
-                    has_rows = true;
-                    // Found a '['
-                    let start = i + 1;
-                    let mut end = start;
-                    while let Some(&(j, d)) = chars.peek() {
-                        if d == ']' {
-                            end = j;
-                            chars.next(); // consume the ']'
-                            break;
-                        } else {
-                            chars.next();
-                        }
-                    }
-                    let row_content = &content[start..end];
-                    let elements: Vec<String> = row_content
-                        .split(',')
-                        .map(|element| element.trim().to_string())
-                        .collect();
-                    rows.push(elements);
-                }
-            }
-        
-            // If no rows were found with inner brackets, try splitting content into lines
-            if !has_rows {
-                let lines = content.lines();
-                for line in lines {
-                    let line = line.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let line = line.trim_matches(|c| c == ',');
-        
-                    let line = if line.starts_with('[') && line.ends_with(']') {
-                        &line[1..line.len() -1]
-                    } else {
-                        line
-                    };
-                    let elements: Vec<String> = line
-                        .split(',')
-                        .map(|element| element.trim().to_string())
-                        .collect();
-                    if !elements.is_empty() {
-                        rows.push(elements);
-                    }
-                }
-            }
-        
-            let matrix = Matrix { rows };
-        
-            if matrix.rows.is_empty() {
-                None
-            } else {
-                Some((name.to_string(), matrix))
-            }
-        }
-        None => {
-            return None;
-        }
-    } 
-    
 }
 
 pub fn extract_variable(input: &str) -> Option<String> {
