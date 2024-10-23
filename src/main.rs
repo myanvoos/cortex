@@ -12,37 +12,34 @@ use crate::parser::parse_to_latex;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = r#"
-        begin(setup)
-        documentclass("article")
-        title("One of the first men on earth")
-        author("Emrys")
+
+begin(setup)
+documentclass("article")
+title("One of the first men on earth")
+author("Emrys")
         
-// Python chunk
+begin(python)
 A = "hello world"
 
-a = int(6)
-b = int(5)
+B = [ [1, 2, 3], [4, 5, 6] ]
 
 def add(a, b):
     return a + b
 
 def print_hello():
     return "hello world from inside a function"
-// End of Python chunk
+end(python)
 
-        end(setup)
+end(setup)
         
-        begin(document)
-        This is some text with math: $(A)
+begin(document)
+This is some text with math: $(A)
 
-        $(print_hello())
-        Result from operation: $(add(100, 5))
+This is a matrix: $$(matrix B)
 
-        Also adding $(a) + $(b)
+Printing a function: $(print_hello())
 
-$(fraction \dy\dx)
-
-        end(document)
+end(document)
     "#;
 
     pyo3::prepare_freethreaded_python();

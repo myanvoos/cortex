@@ -197,28 +197,6 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                     state.set_title(title);
                 }
             },
-            Rule::matrix => {
-                // state.append_to_body("\\begin{equation}\n".to_string());
-                
-                // TODO: Add support for other matrix types
-                // Pmatrix for now
-                // state.append_to_body("\\begin{pmatrix}\n".to_string());
-                
-                if let Some((name, matrix)) = extract_matrix_content(setup_pair.as_str()) {
-                    state.add_matrix_to_map(name, matrix);
-                }
-            },
-            Rule::variable => {
-                println!("Extracted variable: {:?}", setup_pair.as_str());
-
-                let parts: Vec<&str> = setup_pair.as_str().split("=").collect();
-                if parts.len() != 2 {
-                    return Err("Invalid variable definition".into());
-                }
-                let name = parts[0].trim();
-                let value = parts[1].trim();
-                state.add_variable_to_map(name.to_string(), value.to_string());
-            }
             
             _ => {}
         }
@@ -230,10 +208,7 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
     for process_pair in inner_pair.into_inner() {
         match process_pair.as_rule() {
 
-            // NOTE: matrix_usage is NOT matrix!!
-            // matrix is the code definition of a matrix in setup
-            // matrix_usage is the usage of a matrix in the document, in the form $(matrix A) or similar
-            Rule::matrix_usage => {
+            Rule::matrix => {
                 state.append_to_body("\\begin{equation}\n".to_string());
                 
                 // TODO: Add support for other matrix types

@@ -113,7 +113,7 @@ parenthesized_expression = { "(" ~ expression ~ ")" }
 // matrix_elements = { matrix_element ~ ("," ~ matrix_element)* }
 // matrix_element  = { number | identifier }
 
-matrix_usage    = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
+matrix    = { "matrix" ~ matrix_modifier? ~ identifier ~ matrix_style? }
 matrix_modifier = { "transpose" | "inverse" }
 matrix_style    = { string }
 
