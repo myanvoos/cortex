@@ -2,6 +2,7 @@ use std::{collections::HashMap, error::Error, hash::Hash};
 use regex::Regex;
 use pest::Parser;
 use pest_derive::Parser;
+use pyo3::{prelude::*, types::PyDict};
 
 use crate::plugin::build_preamble;
 
@@ -13,13 +14,15 @@ use crate::plugin::build_preamble;
 pub struct LatexParser;
 
 // SETUP: Defining a struct to hold all the state variables. These will be defined in setup block.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct LatexState {
     pub setup: SetupBlock,
     pub document: DocumentBlock,
     pub matrices: HashMap<String, Matrix>,
     pub functions: HashMap<String, Function>,
-    pub variables: HashMap<String, String>
+    pub variables: HashMap<String, String>,
+
+    pub py_locals: Py<PyDict>
 }
 
 #[derive(Debug)]
@@ -63,8 +66,20 @@ pub struct DocumentBlock {
 // SETUP: Implementing LatexState
 impl LatexState {
     pub fn new() -> Self {
-        Self::default()
+        Python::with_gil(|py| {
+            Self {
+                py_locals: PyDict::new(py).into(),
+                setup: SetupBlock::default(),
+                document: DocumentBlock::default(),
+
+                // Remove later because redundant
+                matrices: HashMap::new(),
+                functions: HashMap::new(),
+                variables: HashMap::new(),
+            }
+        })
     }
+
     // Helper methods to modify state of the latex
     pub fn set_title(&mut self, title: String) {
         self.document.title = title;
