@@ -53,6 +53,7 @@ setup_content = _{
   | author
 }
 
+// TODO: Expand to only allow proper Pythonic grammar
 python_content = @{ (!("end(python)") ~ ANY)* }
 
 document_content = _{
@@ -72,8 +73,31 @@ document_content = _{
 text              = { (!("$(" | "$$(" | ">(" | "begin(" | "end(") ~ ANY)+ ~ NEWLINE? }
 inline_math_expr  = { "$" ~ "(" ~ math_content ~ ")" }
 newline_math_expr = { "$$" ~ "(" ~ math_content ~ ")" }
-code_output = { ">" ~ "(" ~ (function_call | identifier) ~ ")" }
 
+// TODO: Make sure only valid Python code in between >(...) 
+code_output = { ">" ~ "(" ~ allowed_python_code_in_document ~ ")" }
+
+allowed_python_code_in_document = {
+    ( !import_or_class_statement ~ ( method_call | function_call | identifier | code_line ) )*
+}
+
+import_or_class_statement = _{
+    "import" ~ WHITESPACE | 
+    "from" ~ WHITESPACE |
+    "class" ~ WHITESPACE
+}
+
+code_line = _{
+    !(import_or_class_statement) ~ (!")" ~ ANY)+ ~ NEWLINE?
+}
+
+function_call = { identifier ~ "(" ~ arg_list? ~ ")" }
+arg_list = { expression ~ ("," ~ expression)* }
+
+method_call = { identifier ~ ("." ~ identifier)+ ~ "(" ~ arg_list? ~ ")" }
+
+
+/////////////////
 math_content = _{ expression }
 
 expression = _{ sum_expression }
@@ -99,9 +123,6 @@ primary_expression = {
 
 add_op = { "+" | "-" }
 mul_op = { "*" | "/" }
-
-function_call = { identifier ~ "(" ~ arg_list? ~ ")" }
-arg_list = { expression ~ ("," ~ expression)* }
 
 parenthesized_expression = { "(" ~ expression ~ ")" }
 
