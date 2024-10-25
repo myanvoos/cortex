@@ -15,8 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 begin(setup)
 documentclass("article")
-title("One of the first men on earth")
-author("Emrys")
+title("Title")
+author("Author1", "Author2")
         
 begin(python)
 A = "hello world"
@@ -29,6 +29,20 @@ def add(a, b):
 
 def print_hello():
     return "hello world from inside a function"
+
+class Person:
+    def __init__(self, name, age):
+        self.name = name
+        self.age = age
+    def __str__(self):
+        return f"Name: {self.name}, Age: {self.age}"
+    def get_name(self):
+        return self.name
+    def get_age(self):
+        return self.age
+
+p1 = Person("John", 36)
+
 end(python)
 
 end(setup)
@@ -40,7 +54,11 @@ This is a matrix: $$(matrix B)
 
 Printing a function: >(print_hello()). Hi!
 
-Result of adding >(a) and >(b): >(add(5, 6))
+Person object: >(p1).
+
+>(p1.get_name()) is a person!
+
+You can add >(a) and >(b) to get >(a + b). Or you can call the function >(add(a, b))!
 
 end(document)
     "#;

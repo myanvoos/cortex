@@ -89,7 +89,7 @@ impl LatexState {
             }
         })
     }
-    pub fn execute_python_code(&self, code: &str) -> Result<(), String> {
+    pub fn initialise_python_setup(&self, code: &str) -> Result<(), String> {
 
         // TODO: Add further string processing for distinguishing between types. 
         // Right now everything is treated as a string
@@ -108,32 +108,24 @@ impl LatexState {
         Ok(())
     }
 
-    pub fn call_python_function(&self, function_name: &str, args: &str) -> String {
+    pub fn evaluate_python_code(&mut self, code: &str) {
         Python::with_gil(|py| {
             let locals = self.py_locals.bind(py);
-    
-            // Create the Python call expression
-            let call_expr = format!("{}{}",function_name, args);
-            println!("Evaluating Python expression: {}", call_expr);
-            
-            // Evaluate the complete function call
-            match py.eval_bound(&call_expr, None, Some(locals)) {
-                Ok(res) => res.to_string(),
-                Err(e) => format!("Error calling function: {}", e)
+                        
+            // First try to evaluate as an expression, if fail then evaluate as a statement
+            match py.eval_bound(code, None, Some(locals)) {
+                Ok(result) => {
+                    println!("Python result: {}", result);
+                    self.append_to_body(result.to_string());
+                },
+                Err(_) => {
+                    if let Err(e) = py.run_bound(code, None, Some(locals)) {
+                        println!("Python execution error: {}", e);
+                        self.append_to_body(format!("Error: {}", e));
+                    }
+                }
             }
-        })
-    }
-
-    pub fn get_python_variable(&self, var_name: &str) -> Py<PyAny> {
-        Python::with_gil(|py| {
-            let locals = self.py_locals.bind(py);
-
-            let value = locals.get_item(var_name).unwrap().expect("Error!");
-
-            println!("Variable: {}, Value: {}", var_name, value.to_string());
-
-            value.into_py(py)
-        })
+        });
     }
 
     // Helper methods to modify state of the latex
@@ -151,17 +143,6 @@ impl LatexState {
     }
     pub fn append_to_body(&mut self, body: String) {
         self.document.body.push_str(&body);
-    }
-
-    // Delete later
-    pub fn add_matrix_to_map(&mut self, name: String, matrix: Matrix) {
-        self.matrices.insert(name, matrix);
-    }
-    pub fn add_function_to_map(&mut self, name: String, function: Function) {
-        self.functions.insert(name, function);
-    }
-    pub fn add_variable_to_map(&mut self, name: String, value: String) {
-        self.variables.insert(name, value);
     }
 }
 
@@ -218,7 +199,6 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
     for document_pair in inner_pair.into_inner() {
         match document_pair.as_rule() {
             Rule::text => {
-                println!("Extracted text: {:?}", document_pair.as_str());
 
                 // TODO: Make this into its own function
                 let text = document_pair.as_str().trim();
@@ -233,7 +213,6 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
                 }
             }
             Rule::inline_math_expr | Rule::newline_math_expr=> {
-                println!("Extracted math: {:?}", document_pair.as_rule()); 
                 let delimiter = if document_pair.as_rule() == Rule::inline_math_expr {
                     "$"
                 } else {
@@ -265,52 +244,9 @@ fn parse_document_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut Lat
 fn process_code(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
     for code_pair in inner_pair.into_inner() {
         match code_pair.as_rule() {
-            Rule::function_call => {
-                // println!("Extracted function call: {:?}", code_pair.as_str());    
-                
-                let mut inner_rules = code_pair.into_inner();
-                let func_name = inner_rules.next().unwrap().as_str();
-
-                let args = if let Some(args_pair) = inner_rules.next() {
-                    let arg_values: Vec<String> = args_pair.into_inner().map(|arg| match arg.as_rule() {
-                        Rule::sum_expression |
-                        Rule::product_expression |
-                        Rule::power_expression |
-                        Rule::primary_expression => {
-                            let mut value = String::new();
-                            for expr in arg.into_inner() {
-                                match expr.as_rule() {
-                                    Rule::number => value = expr.as_str().to_string(),
-                                    _ => value = expr.as_str().to_string(),
-                                }
-                            }
-                            value
-                        }
-                        _ => arg.as_str().to_string()
-                    })
-                    .collect();
-
-                    if arg_values.len() > 0 {
-                        format!("({args})", args=arg_values.join(","))
-                    } else {
-                        "()".to_string()
-                    }
-
-                } else {
-                    "()".to_string()
-                };
-
-                let result = state.call_python_function(func_name, &args);
-
-                println!("Function: {}, Args: {}, Result: {:?}", func_name, args, result);
-
-                state.append_to_body(format!("{}", result));
-            
-            }
-            Rule::identifier => {
-                let value = state.get_python_variable(code_pair.as_str());
-
-                state.append_to_body(format!("{}", value));
+            Rule::allowed_python_code_in_document => {
+                let code = code_pair.as_str();
+                state.evaluate_python_code(code);
             }
             _ => {}
         }
@@ -322,20 +258,17 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
         match setup_pair.as_rule() {
             Rule::document_class => {
                 if let Some(content) = extract_string_content(setup_pair.as_str()) {
-                    println!("Extracted document class: {}", content);
                     state.set_document_class(content);
                 }
             },
             Rule::author => {
                 // ONLY WORKS FOR SINGLE AUTHORS FOR NOW
                 if let Some(author) = extract_string_content(setup_pair.as_str()) {
-                    println!("Extracted author: {}", author);
                     state.add_author(author);
                 }
             },
             Rule::title => {
                 if let Some(title) = extract_string_content(setup_pair.as_str()) {
-                    println!("Extracted title: {}", title);
                     state.set_title(title);
                 }
             },
@@ -344,7 +277,7 @@ fn parse_setup_block(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                 // Right now only one inner rule. 
                 // If we're adding import rule then need to change this for safety. 
                 let python_code = setup_pair.into_inner().as_str();
-                let _ = state.execute_python_code(python_code);
+                let _ = state.initialise_python_setup(python_code);
             }
             
             _ => {}
@@ -358,7 +291,6 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
     fn process_expression(pair: pest::iterators::Pair<Rule>, state: &mut LatexState) {
         match pair.as_rule() {
             Rule::matrix => {
-                println!("Reached a matrix!");
                 state.append_to_body("\\begin{equation}\n".to_string());
                 state.append_to_body("\\begin{pmatrix}\n".to_string());
 
@@ -378,7 +310,6 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
                                     formatted_rows.push(format!("{} \\\\\n", row_str));
                                 }
 
-                                println!("\nFormatted rows:\n{}\n", formatted_rows.join(""));
                                 state.append_to_body(formatted_rows.join(""));
                             },
                             Err(e) => {
@@ -406,7 +337,6 @@ pub fn process_maths(inner_pair: pest::iterators::Pair<Rule>, state: &mut LatexS
             Rule::number |
             Rule::identifier => {
                 let content = pair.as_str();
-                println!("Appending content: {}", content);
                 state.append_to_body(content.to_string());
             },
             _ => {}
@@ -466,41 +396,6 @@ fn get_matrix_elements(identifier: &str, state: &LatexState, py: Python) -> PyRe
         // Not a matrix
         Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!("Variable {} is not a matrix", identifier)))
     }
-}
-
-
-pub fn extract_variable(input: &str) -> Option<String> {
-    use regex::Regex;
-
-    let re = Regex::new(r"^(?P<command>[a-zA-Z_][a-zA-Z0-9_]*)\s+(?:(?P<del>del)\s+)?(?P<expr>.+)$").unwrap();
-
-    if let Some(caps) = re.captures(input) {
-        // Extract the expression part
-        let expr = caps.name("expr")?.as_str().trim();
-
-        // Check if the expression starts with backslash
-        if expr.starts_with('\\') {
-            // Split the expression on backslashes
-            let parts: Vec<&str> = expr.split('\\').filter(|s| !s.is_empty()).collect();
-
-            if parts.len() == 2 {
-                // Fraction with numerator and denominator
-                return Some(format!("{}/{}", parts[0], parts[1]));
-            } else if parts.len() == 1 {
-                // Single variable with backslash
-                return Some(parts[0].to_string());
-            } else {
-                // Handle cases like "fraction \dx \dy \dz"
-                // Combine all parts with '/'
-                return Some(parts.join("/"));
-            }
-        } else {
-            // No backslash, assume variable name
-            return Some(expr.to_string());
-        }
-    }
-
-    None
 }
 
 
